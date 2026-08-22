@@ -388,7 +388,20 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		Name:        "stats",
 		Description: "Show playback statistics",
 	},
+	discord.SlashCommandCreate{
+		Name:        "djrole",
+		Description: "Set the DJ role (requires Manage Server permission)",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionRole{
+				Name:        "role",
+				Description: "Role that can control music playback",
+				Required:    true,
+			},
+		},
+		DefaultMemberPermissions: omit.NewPtr(discord.PermissionManageGuild),
+	},
 }
+
 // Register bulk-overwrites application commands. With guildID set, updates
 // are instant in that guild; zero registers globally instead.
 func Register(client *bot.Client, guildID snowflake.ID) error {
@@ -440,5 +453,6 @@ func All(b *hexbot.Bot) map[string]hexbot.CommandHandler {
 		"debug":           run(Debug),
 		"ping":            run(Ping),
 		"stats":           run(Stats),
+		"djrole":          run(SetDJRole),
 	}
 }

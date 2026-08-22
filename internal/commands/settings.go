@@ -66,7 +66,20 @@ func requestChannelDisplay(id string) string {
 	return "<#" + id + ">"
 }
 
-
+// SetDJRole sets or clears the DJ role for the guild. Requires Manage Server permission.
+func SetDJRole(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
+	role, ok := data.OptSnowflake("role")
+	if !ok {
+		if err := b.Store.SetGuildDJRole(context.Background(), event.GuildID().String(), ""); err != nil {
+			return err
+		}
+		return b.Reply(event, "🎧 DJ role **cleared** — everyone can control music")
+	}
+	if err := b.Store.SetGuildDJRole(context.Background(), event.GuildID().String(), role.String()); err != nil {
+		return err
+	}
+	return b.Reply(event, fmt.Sprintf("🎧 DJ role set to <@&%s> — only members with this role can skip/stop/volume/leave", role))
+}
 // VoteSkip implements vote-based skipping when no DJ is set.
 func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	guildID := *event.GuildID()
