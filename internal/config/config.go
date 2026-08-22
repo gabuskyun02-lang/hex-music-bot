@@ -137,13 +137,29 @@ func parseNode(entry string) (LavalinkNode, error) {
 		return node, fmt.Errorf("empty node name")
 	}
 
-	// Check for secure flag (wss:// or https:// prefix handled by host part)
-	if strings.HasPrefix(hostPart, "wss://") || strings.HasPrefix(hostPart, "https://") {
+	// Explicit secure flag via ?secure or ?insecure suffix takes priority,
+	// then protocol prefix on host, then port 443 heuristic.
+	secureExplicit := ""
+	if idx := strings.LastIndex(hostPart, "?"); idx >= 0 {
+		secureExplicit = strings.ToLower(hostPart[idx+1:])
+		hostPart = hostPart[:idx]
+	}
+
+	switch secureExplicit {
+	case "secure":
 		node.Secure = true
-		hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "wss://"), "https://")
-	} else if strings.HasPrefix(hostPart, "ws://") || strings.HasPrefix(hostPart, "http://") {
+	case "insecure":
 		node.Secure = false
-		hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "ws://"), "http://")
+	default:
+		if strings.HasPrefix(hostPart, "wss://") || strings.HasPrefix(hostPart, "https://") {
+			node.Secure = true
+			hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "wss://"), "https://")
+		} else if strings.HasPrefix(hostPart, "ws://") || strings.HasPrefix(hostPart, "http://") {
+			node.Secure = false
+			hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "ws://"), "http://")
+		} else if strings.HasSuffix(hostPart, ":443") {
+			node.Secure = true
+		}
 	}
 
 	if hostPart == "" {
