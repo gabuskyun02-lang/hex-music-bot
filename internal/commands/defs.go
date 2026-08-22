@@ -376,8 +376,19 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		Name:        "voteskip",
 		Description: "Vote to skip the current song (when no DJ is set)",
 	},
+	discord.SlashCommandCreate{
+		Name:        "debug",
+		Description: "Show system and node diagnostics (owner only)",
+	},
+	discord.SlashCommandCreate{
+		Name:        "ping",
+		Description: "Check bot latency",
+	},
+	discord.SlashCommandCreate{
+		Name:        "stats",
+		Description: "Show playback statistics",
+	},
 }
-
 // Register bulk-overwrites application commands. With guildID set, updates
 // are instant in that guild; zero registers globally instead.
 func Register(client *bot.Client, guildID snowflake.ID) error {
@@ -425,10 +436,9 @@ func All(b *hexbot.Bot) map[string]hexbot.CommandHandler {
 		"playtop":         run(PlayTop),
 		"playskip":        run(PlaySkip),
 		"skipto":          run(SkipTo),
-		"move":            run(Move),
-		"swap":            run(Swap),
-		"removedupes":     run(RemoveDupes),
-		"settings":        run(SettingsView),
 		"voteskip":        run(VoteSkip),
+		"debug":           run(Debug),
+		"ping":            run(Ping),
+		"stats":           run(Stats),
 	}
 }
