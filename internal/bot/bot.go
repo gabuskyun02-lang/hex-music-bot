@@ -28,6 +28,7 @@ type Bot struct {
 	Cards    *CardManager
 	Lyrics   *LyricsCache
 	Metrics  *metrics.Metrics
+	Filters  *filterManager
 	failover *FailoverManager
 	voice    *VoiceWatch
 	Handlers map[string]CommandHandler
@@ -43,6 +44,7 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 		failover: NewFailoverManager(),
 		Handlers: make(map[string]CommandHandler),
 	}
+	b.Filters = newFilterManager(b)
 	b.voice = NewVoiceWatch(b)
 	return b
 }

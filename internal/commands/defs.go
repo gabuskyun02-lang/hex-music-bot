@@ -250,6 +250,128 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		Name:        "request-channel",
 		Description: "Set this channel as the song-request channel",
 	},
+	discord.SlashCommandCreate{
+		Name:        "filter",
+		Description: "Apply an audio filter to playback",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "preset",
+				Description: "Filter preset to apply",
+				Required:    true,
+				Choices: []discord.ApplicationCommandOptionChoiceString{
+					{Name: "Bassboost", Value: "bassboost"},
+					{Name: "Nightcore", Value: "nightcore"},
+					{Name: "Vaporwave", Value: "vaporwave"},
+					{Name: "8D", Value: "8d"},
+					{Name: "Tremolo", Value: "tremolo"},
+					{Name: "Vibrato", Value: "vibrato"},
+					{Name: "Karaoke", Value: "karaoke"},
+					{Name: "Low Pass", Value: "lowpass"},
+					{Name: "Reset All", Value: "reset"},
+				},
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "forward",
+		Description: "Skip forward by a time amount",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "time",
+				Description: "Amount to skip forward (e.g. 10, 1:30)",
+				Required:    false,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "rewind",
+		Description: "Rewind by a time amount",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "time",
+				Description: "Amount to rewind (e.g. 10, 1:30)",
+				Required:    false,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "replay",
+		Description: "Restart the current song from the beginning",
+	},
+	discord.SlashCommandCreate{
+		Name:        "playtop",
+		Description: "Add a song to play next (top of queue)",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "identifier",
+				Description: "Song link or search query",
+				Required:    true,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "playskip",
+		Description: "Add a song and immediately skip to it",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "identifier",
+				Description: "Song link or search query",
+				Required:    true,
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "skipto",
+		Description: "Skip to a specific queue position, removing tracks before it",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionInt{
+				Name:        "position",
+				Description: "Queue position to skip to (see /queue)",
+				Required:    true,
+				MinValue:    omit.Ptr(1),
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "move",
+		Description: "Move a queued song to a different position",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionInt{
+				Name:        "from",
+				Description: "Current queue position of the song",
+				Required:    true,
+				MinValue:    omit.Ptr(1),
+			},
+			discord.ApplicationCommandOptionInt{
+				Name:        "to",
+				Description: "New queue position for the song",
+				Required:    true,
+				MinValue:    omit.Ptr(1),
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "swap",
+		Description: "Swap two queued songs by position",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionInt{
+				Name:        "first",
+				Description: "First queue position",
+				Required:    true,
+				MinValue:    omit.Ptr(1),
+			},
+			discord.ApplicationCommandOptionInt{
+				Name:        "second",
+				Description: "Second queue position",
+				Required:    true,
+				MinValue:    omit.Ptr(1),
+			},
+		},
+	},
+	discord.SlashCommandCreate{
+		Name:        "removedupes",
+		Description: "Remove duplicate songs from the queue",
+	},
 }
 
 // Register bulk-overwrites application commands. With guildID set, updates
@@ -291,9 +413,16 @@ func All(b *hexbot.Bot) map[string]hexbot.CommandHandler {
 		"search":          run(Play),
 		"history":         run(History),
 		"taste":           run(Taste),
-		"playlist":        run(PlaylistGroup),
-		"autoplay":        run(ToggleAutoplay),
-		"247":             run(Set247),
 		"request-channel": run(SetRequestChannel),
+		"filter":          run(Filter),
+		"forward":         run(Forward),
+		"rewind":          run(Rewind),
+		"replay":          run(Replay),
+		"playtop":         run(PlayTop),
+		"playskip":        run(PlaySkip),
+		"skipto":          run(SkipTo),
+		"move":            run(Move),
+		"swap":            run(Swap),
+		"removedupes":     run(RemoveDupes),
 	}
 }

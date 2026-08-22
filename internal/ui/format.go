@@ -3,9 +3,11 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/disgoorg/disgolink/v4/lavalink"
 )
+
 
 // FormatDuration renders milliseconds as h:mm:ss or m:ss.
 func FormatDuration(d lavalink.Duration) string {
@@ -24,4 +26,25 @@ func TrackMarkdown(track lavalink.Track) string {
 		return fmt.Sprintf("`%s`", track.Info.Title)
 	}
 	return fmt.Sprintf("[`%s`](<%s>)", track.Info.Title, *track.Info.URI)
+}
+
+// ParseTimeStr accepts "HH:MM:SS", "MM:SS", or "SS" and returns milliseconds.
+// Returns 0 on parse failure.
+func ParseTimeStr(s string) int64 {
+	parts := strings.Split(s, ":")
+	var h, m, sec int64
+	switch len(parts) {
+	case 3:
+		fmt.Sscanf(parts[0], "%d", &h)
+		fmt.Sscanf(parts[1], "%d", &m)
+		fmt.Sscanf(parts[2], "%d", &sec)
+	case 2:
+		fmt.Sscanf(parts[0], "%d", &m)
+		fmt.Sscanf(parts[1], "%d", &sec)
+	case 1:
+		fmt.Sscanf(parts[0], "%d", &sec)
+	default:
+		return 0
+	}
+	return (h*3600 + m*60 + sec) * 1000
 }

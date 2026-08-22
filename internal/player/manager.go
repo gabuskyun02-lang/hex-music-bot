@@ -5,6 +5,7 @@ package player
 
 import (
 	"math/rand/v2"
+	"strings"
 	"sync"
 
 	"github.com/disgoorg/disgolink/v4/lavalink"
@@ -194,6 +195,54 @@ func (s *State) RemoveAt(index int) (lavalink.Track, bool) {
 	s.queue = append(s.queue[:index], s.queue[index+1:]...)
 	return track, true
 }
+
+// MoveTrack moves a track from one 0-based index to another.
+func (s *State) MoveTrack(from, to int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if from < 0 || from >= len(s.queue) || to < 0 || to >= len(s.queue) {
+		return false
+	}
+	track := s.queue[from]
+	s.queue = append(s.queue[:from], s.queue[from+1:]...)
+	s.queue = append(s.queue[:to], append([]lavalink.Track{track}, s.queue[to:]...)...)
+	return true
+}
+
+// SwapTracks exchanges two tracks at the given 0-based indices.
+func (s *State) SwapTracks(a, b int) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a < 0 || a >= len(s.queue) || b < 0 || b >= len(s.queue) {
+		return false
+	}
+	s.queue[a], s.queue[b] = s.queue[b], s.queue[a]
+	return true
+}
+
+// RemoveDuplicates removes tracks with duplicate titles, keeping first occurrence.
+// Returns count removed.
+func (s *State) RemoveDuplicates() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := make(map[string]bool)
+	var kept []lavalink.Track
+	removed := 0
+	for _, t := range s.queue {
+		key := strings.ToLower(t.Info.Title)
+		if seen[key] {
+			removed++
+			continue
+		}
+		seen[key] = true
+		kept = append(kept, t)
+	}
+	if removed > 0 {
+		s.queue = kept
+	}
+	return removed
+}
+
 // PeekNext returns the next queued track without consuming it.
 func (s *State) PeekNext() (lavalink.Track, bool) {
 	s.mu.Lock()
@@ -202,4 +251,22 @@ func (s *State) PeekNext() (lavalink.Track, bool) {
 		return lavalink.Track{}, false
 	}
 	return s.queue[0], true
+}
+
+// ReplaceQueue atomically replaces the entire queue with the provided tracks.
+func (s *State) ReplaceQueue(tracks []lavalink.Track) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queue = tracks
+}
+
+// InsertAt inserts a track at the given 0-based index in the queue.
+func (s *State) InsertAt(index int, track lavalink.Track) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index >= len(s.queue) {
+		s.queue = append(s.queue, track)
+		return
+	}
+	s.queue = append(s.queue[:index], append([]lavalink.Track{track}, s.queue[index:]...)...)
 }
