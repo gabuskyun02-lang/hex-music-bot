@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -18,7 +19,7 @@ var startTime = time.Now()
 
 // Debug shows system, bot, and per-node diagnostics. Bot owner only.
 func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	ownerID := b.Cfg.GuildID // TODO: dedicated BOT_OWNER_ID env var
+	ownerID := b.Cfg.BotOwnerID
 	if ownerID == 0 || event.User().ID != ownerID {
 		return b.Reply(event, "⛔ Debug panel is restricted to the bot owner")
 	}
@@ -86,9 +87,35 @@ func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	return b.Reply(event, sb.String())
 }
 
-// Ping shows gateway latency.
+// Ping measures REST round-trip time to the best Lavalink node.
 func Ping(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	return b.Reply(event, fmt.Sprintf("🏓 Pong!"))
+	node := b.Lavalink.BestNode()
+	if node == nil {
+		return b.Reply(event, "📡 No Lavalink node connected")
+	}
+
+	start := time.Now()
+	_, err := node.Rest.Version(context.Background())
+	latency := time.Since(start)
+
+	gwLatency := b.Client.HasGateway()
+	gwStr := "unknown"
+	if gwLatency {
+		gwStr = "connected"
+	}
+
+	statusEmoji := "🟢"
+	if latency > 500*time.Millisecond {
+		statusEmoji = "🟡"
+	}
+	if latency > 2*time.Second || err != nil {
+		statusEmoji = "🔴"
+	}
+	if err != nil {
+		return b.Reply(event, fmt.Sprintf("%s Node: `%s` — unreachable (%v)", statusEmoji, node.Config.Name, err))
+	}
+	return b.Reply(event, fmt.Sprintf("%s **%s** — REST round-trip: `%v` · gateway: %s",
+		statusEmoji, node.Config.Name, latency.Round(time.Millisecond), gwStr))
 }
 
 // Stats shows public playback statistics.

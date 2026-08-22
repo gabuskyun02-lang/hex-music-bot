@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/disgo/discord"
@@ -73,7 +74,24 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	}
 
 	queue := b.Player.Get(guildID)
-
+	settings, _ := b.Store.GetGuildSettings(context.Background(), guildID.String())
+	if settings != nil && !settings.AllowDuplicate {
+		// Check toPlay against queue + current track
+		dupes := queue.HasDuplicate(toPlay.Info.Title)
+		for _, t := range enqueued {
+			if !dupes && queue.HasDuplicate(t.Info.Title) {
+				dupes = true
+			}
+		}
+		if p := b.Lavalink.ExistingPlayer(guildID); p != nil && p.Track != nil {
+			if strings.EqualFold(p.Track.Info.Title, toPlay.Info.Title) {
+				dupes = true
+			}
+		}
+		if dupes {
+			return b.EditReply(event, "⛔ Duplicate tracks are blocked on this server")
+		}
+	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player != nil && player.Track != nil {
 		queue.Enqueue(*toPlay)

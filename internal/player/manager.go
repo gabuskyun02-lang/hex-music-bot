@@ -270,3 +270,15 @@ func (s *State) InsertAt(index int, track lavalink.Track) {
 	}
 	s.queue = append(s.queue[:index], append([]lavalink.Track{track}, s.queue[index:]...)...)
 }
+// HasDuplicate checks if a track with the same title is already in the queue.
+func (s *State) HasDuplicate(title string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := strings.ToLower(title)
+	for _, t := range s.queue {
+		if strings.ToLower(t.Info.Title) == key {
+			return true
+		}
+	}
+	return false
+}

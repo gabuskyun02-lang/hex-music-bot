@@ -27,6 +27,8 @@ type Config struct {
 	AutoPause    bool          // pause when voice channel empties
 	LeaveTimeout time.Duration // idle auto-disconnect; 0 = disabled
 	MetricsAddr  string        // Prometheus /metrics; empty = disabled
+
+	BotOwnerID snowflake.ID // /debug access control; zero = disabled
 }
 
 // LavalinkNode represents one Lavalink server connection.
@@ -68,6 +70,15 @@ func Load() (*Config, error) {
 			errs = append(errs, fmt.Errorf("GUILD_ID %q is not a valid snowflake ID", raw))
 		}
 		cfg.GuildID = id
+	}
+	if raw := os.Getenv("BOT_OWNER_ID"); raw != "" {
+		id, err := snowflake.Parse(raw)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("BOT_OWNER_ID %q is not a valid snowflake ID", raw))
+		}
+		cfg.BotOwnerID = id
+	} else {
+		errs = append(errs, fmt.Errorf("BOT_OWNER_ID is required — set it to your Discord user ID for /debug access"))
 	}
 	switch v := strings.ToLower(os.Getenv("LOG_LEVEL")); v {
 	case "", "info":
