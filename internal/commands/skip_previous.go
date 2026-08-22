@@ -11,6 +11,9 @@ import (
 // Skip drops ahead in the queue and starts what follows via the shared action.
 func Skip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	guildID := *event.GuildID()
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to skip tracks")
+	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player == nil || player.Track == nil {
 		return b.Reply(event, "Nothing is playing")

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"fmt"
 	"runtime"
 	"strings"
@@ -11,7 +10,6 @@ import (
 	"github.com/disgoorg/disgo/events"
 
 	"github.com/disgoorg/disgolink/v4/disgolink"
-	"github.com/disgoorg/disgolink/v4/lavalink"
 
 	hexbot "hex-music-bot/internal/bot"
 )
@@ -140,6 +138,3 @@ func formatUptime(d time.Duration) string {
 	}
 }
 
-// unused imports guard — remove if not needed after wiring
-var _ = lavalink.Duration(0)
-var _ = context.Background

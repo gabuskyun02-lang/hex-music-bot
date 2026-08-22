@@ -16,6 +16,9 @@ import (
 
 // Volume sets the Lavalink player volume (Discord validates 0-1000).
 func Volume(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to change volume")
+	}
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil {
 		return b.Reply(event, "No active player — play something first")
@@ -29,6 +32,9 @@ func Volume(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 
 // Seek jumps within the current track.
 func Seek(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to seek")
+	}
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
 		return b.Reply(event, "Nothing is playing")

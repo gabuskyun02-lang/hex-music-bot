@@ -66,10 +66,6 @@ func requestChannelDisplay(id string) string {
 	return "<#" + id + ">"
 }
 
-// SetDJRole sets or clears the DJ role for the guild.
-func SetDJRole(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	return b.Reply(event, "Use `/settings` to manage DJ role — coming in Phase 8 polish")
-}
 
 // VoteSkip implements vote-based skipping when no DJ is set.
 func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {

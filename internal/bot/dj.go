@@ -49,13 +49,3 @@ func (b *Bot) VoteThreshold(event *events.ApplicationCommandInteractionCreate) i
 	}
 	return listeners
 }
-
-// SetLanguage updates the guild locale setting.
-func (b *Bot) SetLanguage(ctx context.Context, guildID string, lang string) error {
-	return b.Store.SetGuildLanguage(ctx, guildID, lang)
-}
-
-// SetDuplicateTrack toggles duplicate track allowance.
-func (b *Bot) SetDuplicateTrack(ctx context.Context, guildID string, allow bool) error {
-	return b.Store.SetGuildDuplicateTrack(ctx, guildID, allow)
-}

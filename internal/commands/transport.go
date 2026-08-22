@@ -11,11 +11,12 @@ import (
 	hexbot "hex-music-bot/internal/bot"
 )
 
-// Stop halts playback and clears the queue via the shared Halt action.
 func Stop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to stop playback")
+	}
 	guildID := *event.GuildID()
 	player := b.Lavalink.ExistingPlayer(guildID)
-	b.Halt(guildID)
 	if player == nil || player.Track == nil {
 		return b.Reply(event, "Nothing is playing — queue cleared")
 	}
@@ -35,8 +36,11 @@ func Join(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ di
 	return b.Reply(event, "Joined <#"+voiceState.ChannelID.String()+">")
 }
 
-// Leaves disconnects the bot and forgets the guild's queue.
+// Leave disconnects the bot and forgets the guild's queue.
 func Leave(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to disconnect the bot")
+	}
 	guildID := *event.GuildID()
 
 	player := b.Lavalink.ExistingPlayer(guildID)

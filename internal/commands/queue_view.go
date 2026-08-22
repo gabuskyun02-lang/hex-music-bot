@@ -54,12 +54,17 @@ func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate
 
 // Shuffle randomizes the queue order via the shared action.
 func Shuffle(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	b.ShuffleQueue(*event.GuildID())
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to shuffle")
+	}
 	return b.Reply(event, "Queue shuffled")
 }
 
 // Loop switches the guild's loop mode via the shared action.
 func Loop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
+	if !b.IsDJ(event) {
+		return b.Reply(event, "⛔ You need the DJ role to change loop mode")
+	}
 	mode, ok := player.ParseLoopMode(data.String("mode"))
 	if !ok {
 		return b.Reply(event, "Unknown loop mode")
