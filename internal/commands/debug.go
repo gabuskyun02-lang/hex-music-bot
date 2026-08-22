@@ -17,26 +17,27 @@ import (
 
 var startTime = time.Now()
 
-// Debug shows system, bot, and per-node diagnostics. Bot owner only.
+// Debug shows system, bot, and per-node diagnostics in an embed. Bot owner only.
 func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	ownerID := b.Cfg.BotOwnerID
-	if ownerID == 0 || event.User().ID != ownerID {
+	if b.Cfg.BotOwnerID == 0 || event.User().ID != b.Cfg.BotOwnerID {
 		return b.Reply(event, "⛔ Debug panel is restricted to the bot owner")
 	}
 
-	var sb strings.Builder
-
-	// System info
+	inlineFalse := false
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	uptime := time.Since(startTime)
-	fmt.Fprintf(&sb, "**🖥 System**\n")
-	fmt.Fprintf(&sb, "• Uptime: `%s`\n", formatUptime(uptime))
-	fmt.Fprintf(&sb, "• Goroutines: `%d`\n", runtime.NumGoroutine())
-	fmt.Fprintf(&sb, "• Heap Alloc: `%.1f MB`\n", float64(mem.HeapAlloc)/(1024*1024))
-	fmt.Fprintf(&sb, "• Sys Memory: `%.1f MB`\n\n", float64(mem.Sys)/(1024*1024))
 
-	// Bot info
+	embed := discord.Embed{
+		Title:       "📄 Debug Panel",
+		Color:       0x5865F2,
+		Description: fmt.Sprintf("```==    System Info    ==\n• Goroutines: %d\n• Heap Alloc: %.1f MB\n• Sys Memory: %.1f MB```",
+			runtime.NumGoroutine(),
+			float64(mem.HeapAlloc)/(1024*1024),
+			float64(mem.Sys)/(1024*1024),
+		),
+	}
+
 	guildCount := 0
 	for range b.Client.Caches.Guilds() {
 		guildCount++
@@ -46,45 +47,55 @@ func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 		activePlayers += n.Stats().PlayingPlayers
 		return true
 	})
-	fmt.Fprintf(&sb, "**🤖 Bot**\n")
-	fmt.Fprintf(&sb, "• Guilds: `%d`\n", guildCount)
-	fmt.Fprintf(&sb, "• Active Players: `%d`\n", activePlayers)
-	fmt.Fprintf(&sb, "• DB: `%s`\n\n", b.Cfg.DBPath)
 
-	// Per-node status
-	nodeCount := 0
+	embed.Fields = append(embed.Fields,
+		discord.EmbedField{
+			Name:   "🤖 Bot Information",
+			Value:  fmt.Sprintf("```• GUILDS:  %d\n• PLAYERS: %d```", guildCount, activePlayers),
+		},
+		discord.EmbedField{
+			Name:   "⏱ Uptime",
+			Value:  formatUptime(uptime),
+		},
+	)
+
 	b.Lavalink.Nodes()(func(n *disgolink.Node) bool {
-		nodeCount++
 		stats := n.Stats()
-		status := "🟢 Connected"
+		statusEmoji := "🟢"
+		statusStr := "Connected"
 		if n.Status() != disgolink.StatusConnected {
-			status = "🔴 Disconnected"
+			statusEmoji = "🔴"
+			statusStr = "Disconnected"
 		}
-		fmt.Fprintf(&sb, "**📡 %s** (%s)\n", n.Config.Name, status)
+		totalMem := float64(stats.Memory.Free + stats.Memory.Used)
+		memPct := 0.0
+		if totalMem > 0 {
+			memPct = float64(stats.Memory.Used) / totalMem * 100
+		}
+
+		var info strings.Builder
+		fmt.Fprintf(&info, "```• ADDRESS: %s\n", n.Config.Address)
+		fmt.Fprintf(&info, "• PLAYERS: %d (playing: %d)\n", stats.Players, stats.PlayingPlayers)
 		if n.Status() == disgolink.StatusConnected {
-			memFree := float64(stats.Memory.Free) / (1024 * 1024)
-			memUsed := float64(stats.Memory.Used) / (1024 * 1024)
-			totalMem := memFree + memUsed
-			var pct float64
-			if totalMem > 0 {
-				pct = memUsed / totalMem * 100
-			}
-			fmt.Fprintf(&sb, "• Address: `%s`\n", n.Config.Address)
-			fmt.Fprintf(&sb, "• Players: `%d` (playing: `%d`)\n", stats.Players, stats.PlayingPlayers)
-			fmt.Fprintf(&sb, "• CPU: `%.1f%%` system / `%.1f%%` lavalink\n", stats.CPU.SystemLoad*100, stats.CPU.LavalinkLoad*100)
-			fmt.Fprintf(&sb, "• RAM: `%.0f/%.0f MB` (`%.1f%%`)\n", memUsed, totalMem, pct)
-			fmt.Fprintf(&sb, "• Uptime: `%s`\n", formatUptime(time.Duration(stats.Uptime)))
-		} else {
-			fmt.Fprintf(&sb, "• Address: `%s`\n", n.Config.Address)
+			fmt.Fprintf(&info, "• CPU:     %.1f%% system / %.1f%% lavalink\n", stats.CPU.SystemLoad*100, stats.CPU.LavalinkLoad*100)
+			fmt.Fprintf(&info, "• RAM:     %.0f/%.0f MB (%.1f%%)\n",
+				float64(stats.Memory.Used)/(1024*1024),
+				float64(stats.Memory.Free+stats.Memory.Used)/(1024*1024), memPct)
+			fmt.Fprintf(&info, "• UPTIME:  %s", formatUptime(time.Duration(stats.Uptime)))
 		}
-		sb.WriteString("\n")
+		info.WriteString("```")
+
+		embed.Fields = append(embed.Fields, discord.EmbedField{
+			Name:   fmt.Sprintf("%s %s Node — %s", statusEmoji, n.Config.Name, statusStr),
+			Value:  info.String(),
+			Inline: &inlineFalse,
+		})
 		return true
 	})
-	if nodeCount == 0 {
-		sb.WriteString("**📡 Nodes:** None connected\n")
-	}
 
-	return b.Reply(event, sb.String())
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds: []discord.Embed{embed},
+	})
 }
 
 // Ping measures REST round-trip time to the best Lavalink node.
@@ -98,12 +109,6 @@ func Ping(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ di
 	_, err := node.Rest.Version(context.Background())
 	latency := time.Since(start)
 
-	gwLatency := b.Client.HasGateway()
-	gwStr := "unknown"
-	if gwLatency {
-		gwStr = "connected"
-	}
-
 	statusEmoji := "🟢"
 	if latency > 500*time.Millisecond {
 		statusEmoji = "🟡"
@@ -114,8 +119,8 @@ func Ping(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ di
 	if err != nil {
 		return b.Reply(event, fmt.Sprintf("%s Node: `%s` — unreachable (%v)", statusEmoji, node.Config.Name, err))
 	}
-	return b.Reply(event, fmt.Sprintf("%s **%s** — REST round-trip: `%v` · gateway: %s",
-		statusEmoji, node.Config.Name, latency.Round(time.Millisecond), gwStr))
+	return b.Reply(event, fmt.Sprintf("%s **%s** — REST round-trip: `%v`",
+		statusEmoji, node.Config.Name, latency.Round(time.Millisecond)))
 }
 
 // Stats shows public playback statistics.
@@ -139,15 +144,13 @@ func Stats(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 		guildCount++
 	}
 
-	return b.Reply(event, fmt.Sprintf(
-		"📊 **hex-music-bot Stats**\n"+
-			"• Uptime: `%s`\n"+
-			"• Guilds: `%d`\n"+
-			"• Active Nodes: `%d`\n"+
-			"• Total Players: `%d`\n"+
-			"• Currently Playing: `%d`",
-		formatUptime(uptime), guildCount, activeNodes, totalPlayers, totalPlaying,
-	))
+	embed := discord.Embed{
+		Title:       "📊 hex-music-bot Stats",
+		Color:       0x5865F2,
+		Description: fmt.Sprintf("• Uptime: `%s`\n• Guilds: `%d`\n• Active Nodes: `%d`\n• Total Players: `%d`\n• Currently Playing: `%d`",
+			formatUptime(uptime), guildCount, activeNodes, totalPlayers, totalPlaying),
+	}
+	return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
 }
 
 func formatUptime(d time.Duration) string {
@@ -164,4 +167,3 @@ func formatUptime(d time.Duration) string {
 		return fmt.Sprintf("%dm %ds", minutes, seconds)
 	}
 }
-

@@ -9,11 +9,11 @@ import (
 	"github.com/disgoorg/omit"
 )
 
-// LyricDoc is one paginated lyrics session, addressed by interaction token.
+// LyricDoc is one paginated lyrics session, addressed by a short session ID.
 type LyricDoc struct {
-	Token string
-	Pages []string
-	Page  int
+	SessionID string
+	Pages     []string
+	Page      int
 }
 
 const lyricsCacheCap = 200
@@ -34,10 +34,10 @@ func NewLyricsCache() *LyricsCache {
 func (c *LyricsCache) Put(doc *LyricDoc) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if _, exists := c.docs[doc.Token]; !exists {
-		c.order = append(c.order, doc.Token)
+	if _, exists := c.docs[doc.SessionID]; !exists {
+		c.order = append(c.order, doc.SessionID)
 	}
-	c.docs[doc.Token] = doc
+	c.docs[doc.SessionID] = doc
 	for len(c.order) > lyricsCacheCap {
 		oldest := c.order[0]
 		c.order = c.order[1:]
@@ -45,20 +45,20 @@ func (c *LyricsCache) Put(doc *LyricDoc) {
 	}
 }
 
-// Get returns the doc for a token.
-func (c *LyricsCache) Get(token string) (*LyricDoc, bool) {
+// Get returns the doc for a session ID.
+func (c *LyricsCache) Get(sessionID string) (*LyricDoc, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	doc, ok := c.docs[token]
+	doc, ok := c.docs[sessionID]
 	return doc, ok
 }
 
 // Advance moves the doc's page by delta, clamped to the valid range.
-// Returns the updated doc; ok=false when the token expired.
-func (c *LyricsCache) Advance(token string, delta int) (*LyricDoc, bool) {
+// Returns the updated doc; ok=false when the session expired.
+func (c *LyricsCache) Advance(sessionID string, delta int) (*LyricDoc, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	doc, ok := c.docs[token]
+	doc, ok := c.docs[sessionID]
 	if !ok {
 		return nil, false
 	}
@@ -74,8 +74,8 @@ func (c *LyricsCache) Advance(token string, delta int) (*LyricDoc, bool) {
 
 // LyricButtons builds the pager row for a doc state.
 func LyricButtons(doc *LyricDoc) discord.LayoutComponent {
-	prev := discord.NewSecondaryButton("◀", "hexlyr:p:"+doc.Token)
-	next := discord.NewSecondaryButton("▶", "hexlyr:n:"+doc.Token)
+	prev := discord.NewSecondaryButton("◀", "hexlyr:p:"+doc.SessionID)
+	next := discord.NewSecondaryButton("▶", "hexlyr:n:"+doc.SessionID)
 	prev.Disabled = doc.Page == 0
 	next.Disabled = doc.Page >= len(doc.Pages)-1
 	return discord.ActionRowComponent{Components: []discord.InteractiveComponent{prev, next}}

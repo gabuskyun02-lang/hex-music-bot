@@ -53,9 +53,8 @@ func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ 
 		pages[lyricsMaxPages-1] += "\n…truncated"
 	}
 
-	token := event.Token()
-	doc := &hexbot.LyricDoc{Token: token, Pages: pages, Page: 0}
-	b.Lyrics.Put(doc)
+	sessionID := fmt.Sprintf("lyr%d", time.Now().UnixNano()%1e9)
+	doc := &hexbot.LyricDoc{SessionID: sessionID, Pages: pages, Page: 0}
 
 	components := []discord.LayoutComponent{hexbot.LyricButtons(doc)}
 	_, err = b.Client.Rest.CreateMessage(event.Channel().ID(), discord.MessageCreate{
