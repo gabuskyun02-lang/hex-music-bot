@@ -19,6 +19,9 @@ var migrationInit string
 //go:embed migrations/0002_persistence.sql
 var migrationPersistence string
 
+//go:embed migrations/0003_settings_expansion.sql
+var migrationSettings string
+
 type migration struct {
 	name   string
 	script string
@@ -27,6 +30,7 @@ type migration struct {
 var migrations = []migration{
 	{"0001_init", migrationInit},
 	{"0002_persistence", migrationPersistence},
+	{"0003_settings_expansion", migrationSettings},
 }
 
 // Store wraps the SQLite handle.

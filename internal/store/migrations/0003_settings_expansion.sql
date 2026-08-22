@@ -1,0 +1,2 @@
+ALTER TABLE guild_settings ADD COLUMN vote_threshold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE guild_settings ADD COLUMN duplicate_track INTEGER NOT NULL DEFAULT 1;

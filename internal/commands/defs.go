@@ -295,10 +295,6 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		},
 	},
 	discord.SlashCommandCreate{
-		Name:        "replay",
-		Description: "Restart the current song from the beginning",
-	},
-	discord.SlashCommandCreate{
 		Name:        "playtop",
 		Description: "Add a song to play next (top of queue)",
 		Options: []discord.ApplicationCommandOption{
@@ -372,6 +368,14 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		Name:        "removedupes",
 		Description: "Remove duplicate songs from the queue",
 	},
+	discord.SlashCommandCreate{
+		Name:        "settings",
+		Description: "View all guild settings",
+	},
+	discord.SlashCommandCreate{
+		Name:        "voteskip",
+		Description: "Vote to skip the current song (when no DJ is set)",
+	},
 }
 
 // Register bulk-overwrites application commands. With guildID set, updates
@@ -424,5 +428,7 @@ func All(b *hexbot.Bot) map[string]hexbot.CommandHandler {
 		"move":            run(Move),
 		"swap":            run(Swap),
 		"removedupes":     run(RemoveDupes),
+		"settings":        run(SettingsView),
+		"voteskip":        run(VoteSkip),
 	}
 }

@@ -25,16 +25,16 @@ type GuildSettings struct {
 	Autoplay         bool
 	AutoplayLevel    string
 	DJRoleID         string
+	AllowDuplicate   bool
 }
-
 func (s *Store) GetGuildSettings(ctx context.Context, guildID string) (*GuildSettings, error) {
-	const q = `SELECT default_volume, locale, request_channel_id, mode_247, autoplay, autoplay_level, dj_role_id
+	const q = `SELECT default_volume, locale, request_channel_id, mode_247, autoplay, autoplay_level, dj_role_id, duplicate_track
 		FROM guild_settings WHERE guild_id = ?`
 	var gs GuildSettings
 	gs.GuildID = guildID
 	err := s.db.QueryRowContext(ctx, q, guildID).Scan(
 		&gs.DefaultVolume, &gs.Locale, &gs.RequestChannelID,
-		&gs.Mode247, &gs.Autoplay, &gs.AutoplayLevel, &gs.DJRoleID,
+		&gs.Mode247, &gs.Autoplay, &gs.AutoplayLevel, &gs.DJRoleID, &gs.AllowDuplicate,
 	)
 	if err == sql.ErrNoRows {
 		_, iErr := s.db.ExecContext(ctx,
@@ -42,10 +42,9 @@ func (s *Store) GetGuildSettings(ctx context.Context, guildID string) (*GuildSet
 		if iErr != nil {
 			return nil, fmt.Errorf("ensure guild settings: %w", iErr)
 		}
-		// Re-read to get schema defaults
 		err = s.db.QueryRowContext(ctx, q, guildID).Scan(
 			&gs.DefaultVolume, &gs.Locale, &gs.RequestChannelID,
-			&gs.Mode247, &gs.Autoplay, &gs.AutoplayLevel, &gs.DJRoleID,
+			&gs.Mode247, &gs.Autoplay, &gs.AutoplayLevel, &gs.DJRoleID, &gs.AllowDuplicate,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("re-read guild settings: %w", err)
@@ -82,7 +81,21 @@ func (s *Store) SetGuildAutoplay(ctx context.Context, guildID string, enabled bo
 	return err
 }
 
-// --- Play History ---
+func (s *Store) SetGuildLanguage(ctx context.Context, guildID, lang string) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO guild_settings (guild_id, locale) VALUES (?, ?)
+		 ON CONFLICT(guild_id) DO UPDATE SET locale = ?, updated_at = datetime('now')`,
+		guildID, lang, lang)
+	return err
+}
+
+func (s *Store) SetGuildDuplicateTrack(ctx context.Context, guildID string, allow bool) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO guild_settings (guild_id, duplicate_track) VALUES (?, ?)
+		 ON CONFLICT(guild_id) DO UPDATE SET duplicate_track = ?, updated_at = datetime('now')`,
+		guildID, allow, allow)
+	return err
+}
 
 type PlayRecord struct {
 	Title       string

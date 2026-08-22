@@ -31,6 +31,7 @@ type Bot struct {
 	Filters  *filterManager
 	failover *FailoverManager
 	voice    *VoiceWatch
+	Votes    *VoteManager
 	Handlers map[string]CommandHandler
 }
 
@@ -46,5 +47,6 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 	}
 	b.Filters = newFilterManager(b)
 	b.voice = NewVoiceWatch(b)
+	b.Votes = NewVoteManager()
 	return b
 }
