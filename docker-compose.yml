@@ -1,0 +1,38 @@
+version: "3.8"
+
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:4
+    container_name: hex-music-bot-lavalink
+    restart: unless-stopped
+    environment:
+      _JAVA_OPTIONS: "-Xmx256m"
+    ports:
+      - "2333:2333"
+    volumes:
+      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - lavalink-logs:/opt/Lavalink/logs
+
+  bot:
+    build: .
+    container_name: hex-music-bot-bot
+    restart: unless-stopped
+    depends_on:
+      - lavalink
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      LAVALINK_ADDRESS: lavalink:2333
+      LAVALINK_PASSWORD: youshallnotpass
+      LAVALINK_SECURE: "false"
+      DB_PATH: /app/data/hex-music-bot.db
+      METRICS_ADDR: ":9090"
+      AUTO_PAUSE: "true"
+      LEAVE_TIMEOUT_SECONDS: "300"
+    ports:
+      - "9090:9090"
+    volumes:
+      - bot-data:/app/data
+
+volumes:
+  bot-data:
+  lavalink-logs:

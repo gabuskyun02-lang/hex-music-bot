@@ -1,0 +1,205 @@
+// Package player holds per-guild playback state: queues, loop modes, and
+// play history. It knows nothing about Discord or Lavalink transports —
+// handlers drive it, events read from it.
+package player
+
+import (
+	"math/rand/v2"
+	"sync"
+
+	"github.com/disgoorg/disgolink/v4/lavalink"
+	"github.com/disgoorg/snowflake/v2"
+)
+
+// LoopMode controls what happens after a track ends.
+type LoopMode uint8
+
+const (
+	LoopOff LoopMode = iota
+	LoopTrack
+	LoopQueue
+)
+
+func (l LoopMode) String() string {
+	switch l {
+	case LoopTrack:
+		return "track"
+	case LoopQueue:
+		return "queue"
+	default:
+		return "off"
+	}
+}
+
+// ParseLoopMode maps user input onto LoopMode.
+func ParseLoopMode(s string) (LoopMode, bool) {
+	switch s {
+	case "off":
+		return LoopOff, true
+	case "track":
+		return LoopTrack, true
+	case "queue":
+		return LoopQueue, true
+	default:
+		return LoopOff, false
+	}
+}
+
+const historyCap = 50
+
+// State is one guild's playback state. All methods are safe for concurrent
+// use from gateway events and interaction handlers.
+type State struct {
+	mu      sync.Mutex
+	queue   []lavalink.Track
+	history []lavalink.Track // finished tracks, most recent last
+	loop    LoopMode
+}
+
+// Enqueue appends tracks to the back of the queue.
+func (s *State) Enqueue(tracks ...lavalink.Track) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queue = append(s.queue, tracks...)
+}
+
+// Next pops and returns the next queued track.
+func (s *State) Next() (lavalink.Track, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.queue) == 0 {
+		return lavalink.Track{}, false
+	}
+	track := s.queue[0]
+	s.queue = s.queue[1:]
+	return track, true
+}
+
+// Drop removes up to n tracks from the front of the queue (used by /skip n).
+func (s *State) Drop(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if n > len(s.queue) {
+		n = len(s.queue)
+	}
+	s.queue = s.queue[n:]
+}
+
+// Shuffle randomizes queue order.
+func (s *State) Shuffle() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rand.Shuffle(len(s.queue), func(i, j int) {
+		s.queue[i], s.queue[j] = s.queue[j], s.queue[i]
+	})
+}
+
+// ClearQueue empties the queue without touching history or loop mode.
+func (s *State) ClearQueue() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.queue = nil
+}
+
+// Len returns the number of queued tracks.
+func (s *State) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.queue)
+}
+
+// Snapshot copies the queue for display purposes.
+func (s *State) Snapshot() []lavalink.Track {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]lavalink.Track, len(s.queue))
+	copy(out, s.queue)
+	return out
+}
+
+// LoopMode returns the current loop mode.
+func (s *State) LoopMode() LoopMode {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.loop
+}
+
+// SetLoopMode updates the loop mode.
+func (s *State) SetLoopMode(mode LoopMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loop = mode
+}
+
+// PushHistory records a finished track, trimming to historyCap.
+func (s *State) PushHistory(track lavalink.Track) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.history = append(s.history, track)
+	if len(s.history) > historyCap {
+		s.history = s.history[len(s.history)-historyCap:]
+	}
+}
+
+// PopHistory returns the most recently finished track.
+func (s *State) PopHistory() (lavalink.Track, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.history) == 0 {
+		return lavalink.Track{}, false
+	}
+	track := s.history[len(s.history)-1]
+	s.history = s.history[:len(s.history)-1]
+	return track, true
+}
+
+// Manager owns all guild states.
+type Manager struct {
+	mu     sync.RWMutex
+	states map[snowflake.ID]*State
+}
+
+// NewManager returns an empty Manager.
+func NewManager() *Manager {
+	return &Manager{states: make(map[snowflake.ID]*State)}
+}
+
+// Get returns the guild's state, creating it if missing.
+func (m *Manager) Get(guildID snowflake.ID) *State {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	state, ok := m.states[guildID]
+	if !ok {
+		state = &State{}
+		m.states[guildID] = state
+	}
+	return state
+}
+
+// Delete drops the guild's state entirely (called when the bot leaves VC).
+func (m *Manager) Delete(guildID snowflake.ID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.states, guildID)
+}
+
+// RemoveAt deletes the queue item at the given 0-based index and returns it.
+func (s *State) RemoveAt(index int) (lavalink.Track, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if index < 0 || index >= len(s.queue) {
+		return lavalink.Track{}, false
+	}
+	track := s.queue[index]
+	s.queue = append(s.queue[:index], s.queue[index+1:]...)
+	return track, true
+}
+// PeekNext returns the next queued track without consuming it.
+func (s *State) PeekNext() (lavalink.Track, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.queue) == 0 {
+		return lavalink.Track{}, false
+	}
+	return s.queue[0], true
+}

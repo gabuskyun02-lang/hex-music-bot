@@ -1,0 +1,12 @@
+# secrets & local data
+.env
+data/
+
+# binaries
+*.exe
+bin/
+dist/
+
+# lavalink runtime
+lavalink/Lavalink.jar
+lavalink/logs/
