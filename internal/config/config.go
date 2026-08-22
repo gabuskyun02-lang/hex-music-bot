@@ -22,14 +22,19 @@ type Config struct {
 	LogLevel slog.Level
 	DBPath   string
 
-	NodeName     string
-	NodeAddress  string
-	NodePassword string
-	NodeSecure   bool
+	Nodes []LavalinkNode
 
 	AutoPause    bool          // pause when voice channel empties
 	LeaveTimeout time.Duration // idle auto-disconnect; 0 = disabled
 	MetricsAddr  string        // Prometheus /metrics; empty = disabled
+}
+
+// LavalinkNode represents one Lavalink server connection.
+type LavalinkNode struct {
+	Name     string
+	Address  string
+	Password string
+	Secure   bool
 }
 
 // Load reads .env (if present), then the process environment, and validates.
@@ -38,14 +43,14 @@ func Load() (*Config, error) {
 
 	var errs []error
 	cfg := &Config{
-		Token:        os.Getenv("DISCORD_TOKEN"),
-		DBPath:       envOr("DB_PATH", "./data/hex-music-bot.db"),
-		NodeName:     envOr("LAVALINK_NODE_NAME", "main"),
-		NodeAddress:  envOr("LAVALINK_ADDRESS", "localhost:2333"),
-		NodePassword: os.Getenv("LAVALINK_PASSWORD"),
-		AutoPause:    envBool("AUTO_PAUSE", true),
-		MetricsAddr:  os.Getenv("METRICS_ADDR"),
+		Token:       os.Getenv("DISCORD_TOKEN"),
+		DBPath:      envOr("DB_PATH", "./data/hex-music-bot.db"),
+		AutoPause:   envBool("AUTO_PAUSE", true),
+		MetricsAddr: os.Getenv("METRICS_ADDR"),
 	}
+	nodes, nodeErrs := parseNodes(envOr("LAVALINK_NODES", "main:youshallnotpass@localhost:2333"))
+	cfg.Nodes = nodes
+	errs = append(errs, nodeErrs...)
 	if raw := envOr("LEAVE_TIMEOUT_SECONDS", "300"); raw != "0" {
 		if secs, err := strconv.Atoi(raw); err == nil && secs > 0 {
 			cfg.LeaveTimeout = time.Duration(secs) * time.Second
@@ -56,10 +61,6 @@ func Load() (*Config, error) {
 
 	if cfg.Token == "" {
 		errs = append(errs, fmt.Errorf("DISCORD_TOKEN is required (https://discord.com/developers/applications)"))
-	}
-	if cfg.NodePassword == "" {
-		cfg.NodePassword = "youshallnotpass"
-		slog.Warn("LAVALINK_PASSWORD not set, falling back to Lavalink default")
 	}
 	if raw := os.Getenv("GUILD_ID"); raw != "" {
 		id, err := snowflake.Parse(raw)
@@ -80,14 +81,6 @@ func Load() (*Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("LOG_LEVEL %q invalid: use debug|info|warn|error", v))
 	}
-	switch v := strings.ToLower(os.Getenv("LAVALINK_SECURE")); v {
-	case "", "false", "0", "no":
-		cfg.NodeSecure = false
-	case "true", "1", "yes":
-		cfg.NodeSecure = true
-	default:
-		errs = append(errs, fmt.Errorf("LAVALINK_SECURE %q invalid: use true|false", v))
-	}
 	if cfg.DBPath == "" {
 		errs = append(errs, fmt.Errorf("DB_PATH must not be empty"))
 	}
@@ -97,6 +90,69 @@ func Load() (*Config, error) {
 	}
 	return cfg, nil
 }
+
+// parseNodes parses LAVALINK_NODES entries in the format
+// "name:password@host:port,name:password@host:port,..."
+func parseNodes(raw string) ([]LavalinkNode, []error) {
+	var nodes []LavalinkNode
+	var errs []error
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		node, err := parseNode(entry)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("LAVALINK_NODES entry %q invalid: %v", entry, err))
+			continue
+		}
+		nodes = append(nodes, node)
+	}
+	if len(nodes) == 0 && len(errs) == 0 {
+		errs = append(errs, fmt.Errorf("LAVALINK_NODES produced zero valid nodes"))
+	}
+	return nodes, errs
+}
+
+func parseNode(entry string) (LavalinkNode, error) {
+	var node LavalinkNode
+
+	// name:password@host:port
+	atIdx := strings.LastIndex(entry, "@")
+	if atIdx < 0 {
+		return node, fmt.Errorf("missing @ separator")
+	}
+	userPart := entry[:atIdx]
+	hostPart := entry[atIdx+1:]
+
+	colonIdx := strings.Index(userPart, ":")
+	if colonIdx >= 0 {
+		node.Name = userPart[:colonIdx]
+		node.Password = userPart[colonIdx+1:]
+	} else {
+		node.Name = userPart
+	}
+
+	if node.Name == "" {
+		return node, fmt.Errorf("empty node name")
+	}
+
+	// Check for secure flag (wss:// or https:// prefix handled by host part)
+	if strings.HasPrefix(hostPart, "wss://") || strings.HasPrefix(hostPart, "https://") {
+		node.Secure = true
+		hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "wss://"), "https://")
+	} else if strings.HasPrefix(hostPart, "ws://") || strings.HasPrefix(hostPart, "http://") {
+		node.Secure = false
+		hostPart = strings.TrimPrefix(strings.TrimPrefix(hostPart, "ws://"), "http://")
+	}
+
+	if hostPart == "" {
+		return node, fmt.Errorf("empty address")
+	}
+	node.Address = hostPart
+	return node, nil
+}
+
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

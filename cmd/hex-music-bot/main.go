@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -36,7 +37,7 @@ func main() {
 	}
 
 	slog.Info("starting hex-music-bot",
-		slog.String("node", cfg.NodeAddress),
+		slog.String("nodes", fmt.Sprintf("%d configured", len(cfg.Nodes))),
 		slog.String("db", cfg.DBPath),
 	)
 
@@ -94,27 +95,40 @@ func main() {
 	}
 	defer client.Close(context.TODO())
 
-	node, err := b.Lavalink.AddNode(ctx, disgolink.NodeConfig{
-		Name:     cfg.NodeName,
-		Address:  cfg.NodeAddress,
-		Password: cfg.NodePassword,
-		Secure:   cfg.NodeSecure,
-	})
-	if err != nil {
-		slog.Error("failed to connect to lavalink node",
-			slog.String("address", cfg.NodeAddress),
-			slog.Any("err", err),
-		)
-		os.Exit(1)
+	connected := 0
+	for _, n := range cfg.Nodes {
+		node, err := b.Lavalink.AddNode(ctx, disgolink.NodeConfig{
+			Name:     n.Name,
+			Address:  n.Address,
+			Password: n.Password,
+			Secure:   n.Secure,
+		})
+		if err != nil {
+			slog.Warn("failed to connect to lavalink node",
+				slog.String("name", n.Name),
+				slog.String("address", n.Address),
+				slog.Any("err", err),
+			)
+			continue
+		}
+		version, err := node.Rest.Version(ctx)
+		if err != nil {
+			slog.Warn("node connected but version probe failed",
+				slog.String("node", n.Name),
+				slog.Any("err", err),
+			)
+		} else {
+			slog.Info("lavalink node ready",
+				slog.String("node", n.Name),
+				slog.String("address", n.Address),
+				slog.String("version", version),
+			)
+		}
+		connected++
 	}
-	version, err := node.Rest.Version(ctx)
-	if err != nil {
-		slog.Warn("connected to node but version probe failed", slog.Any("err", err))
-	} else {
-		slog.Info("lavalink node ready",
-			slog.String("address", cfg.NodeAddress),
-			slog.String("version", version),
-		)
+
+	if connected == 0 && len(cfg.Nodes) > 0 {
+		slog.Warn("no lavalink nodes connected — bot will retry in background")
 	}
 
 	go b.RestoreSnapshots()
