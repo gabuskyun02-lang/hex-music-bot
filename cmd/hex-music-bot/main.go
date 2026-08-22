@@ -54,7 +54,7 @@ func main() {
 
 	client, err := disgo.New(cfg.Token,
 		disgobot.WithGatewayConfigOpts(
-			gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildVoiceStates),
+			gateway.WithIntents(gateway.IntentGuilds, gateway.IntentGuildVoiceStates, gateway.IntentGuildMessages, gateway.IntentMessageContent),
 		),
 		disgobot.WithCacheConfigOpts(
 			cache.WithCaches(cache.FlagVoiceStates),
@@ -64,6 +64,7 @@ func main() {
 		disgobot.WithEventListenerFunc(b.OnVoiceServerUpdate),
 		disgobot.WithEventListenerFunc(b.OnComponentInteraction),
 		disgobot.WithEventListenerFunc(b.OnAutocomplete),
+		disgobot.WithEventListenerFunc(b.OnMessageCreate),
 	)
 	if err != nil {
 		slog.Error("failed to build discord client", slog.Any("err", err))
