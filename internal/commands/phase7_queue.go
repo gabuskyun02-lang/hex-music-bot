@@ -50,6 +50,22 @@ func insertAtTop(b *hexbot.Bot, guildID snowflake.ID, track lavalink.Track) {
 	newQueue := append([]lavalink.Track{track}, tracks...)
 	state.ReplaceQueue(newQueue)
 }
+// checkDuplicate returns true when the guild blocks duplicates and the track
+// title already exists in the queue or is currently playing.
+func checkDuplicate(b *hexbot.Bot, guildID snowflake.ID, title string) bool {
+	settings, _ := b.Store.GetGuildSettings(context.Background(), guildID.String())
+	if settings == nil || settings.AllowDuplicate {
+		return false
+	}
+	queue := b.Player.Get(guildID)
+	if queue.HasDuplicate(title) {
+		return true
+	}
+	if p := b.Lavalink.ExistingPlayer(guildID); p != nil && p.Track != nil {
+		return strings.EqualFold(p.Track.Info.Title, title)
+	}
+	return false
+}
 
 // PlayTop resolves a track and inserts it at the front of the queue.
 func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
@@ -70,6 +86,9 @@ func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	if toPlay == nil {
 		return b.EditReply(event, fmt.Sprintf("Nothing found for `%s`", identifier))
 	}
+	if checkDuplicate(b, guildID, toPlay.Info.Title) {
+		return b.EditReply(event, "⛔ Duplicate tracks are blocked on this server")
+	}
 
 	queue := b.Player.Get(guildID)
 	p := b.Lavalink.ExistingPlayer(guildID)
@@ -78,13 +97,13 @@ func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 		queue.InsertAt(0, *toPlay)
 		msg := fmt.Sprintf("📌 %s will play next", ui.TrackMarkdown(*toPlay))
 		if len(enqueued) > 0 {
-			queue.Enqueue(enqueued...)
+			queue.EnqueueAs(event.User().ID, enqueued...)
 			msg += fmt.Sprintf(" (+%d playlist tracks)", len(enqueued))
 		}
 		return b.EditReply(event, msg)
 	}
 
-	queue.Enqueue(enqueued...)
+	queue.EnqueueAs(event.User().ID, enqueued...)
 	b.Client.UpdateVoiceState(context.TODO(), guildID, vs.ChannelID, false, false)
 	if err := b.Lavalink.Player(guildID).Update(context.TODO(), disgolink.WithTrack(*toPlay)); err != nil {
 		return err
@@ -112,7 +131,9 @@ func PlaySkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 	if toPlay == nil {
 		return b.EditReply(event, fmt.Sprintf("Nothing found for `%s`", identifier))
 	}
-
+	if checkDuplicate(b, guildID, toPlay.Info.Title) {
+		return b.EditReply(event, "⛔ Duplicate tracks are blocked on this server")
+	}
 	p := b.Lavalink.ExistingPlayer(guildID)
 	if p != nil && p.Track != nil {
 		b.Player.Get(guildID).PushHistory(*p.Track)

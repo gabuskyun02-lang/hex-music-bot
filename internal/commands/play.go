@@ -94,15 +94,15 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player != nil && player.Track != nil {
-		queue.Enqueue(*toPlay)
-		queue.Enqueue(enqueued...)
+		queue.EnqueueAs(event.User().ID, *toPlay)
+		queue.EnqueueAs(event.User().ID, enqueued...)
 		message := fmt.Sprintf("Added %s to the queue", ui.TrackMarkdown(*toPlay))
 		if len(enqueued) > 0 {
 			message += fmt.Sprintf(" (+%d playlist tracks)", len(enqueued))
 		}
 		return b.EditReply(event, message)
 	}
-	queue.Enqueue(enqueued...)
+	queue.EnqueueAs(event.User().ID, enqueued...)
 
 	if err := b.Client.UpdateVoiceState(context.TODO(), guildID, voiceState.ChannelID, false, false); err != nil {
 		return err
