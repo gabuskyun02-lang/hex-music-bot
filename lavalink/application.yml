@@ -17,14 +17,14 @@ lavalink:
   filters:
     volume: true
     equalizer: true
-    karaoke: false
-    timescale: false
-    tremolo: false
-    vibrato: false
-    distortion: false
-    rotation: false
-    channelMix: false
-    lowPass: false
+    karaoke: true
+    timescale: true
+    tremolo: true
+    vibrato: true
+    distortion: true
+    rotation: true
+    channelMix: true
+    lowPass: true
 
 logging:
   file:

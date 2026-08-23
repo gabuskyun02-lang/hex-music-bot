@@ -132,6 +132,8 @@ func main() {
 		slog.Warn("no lavalink nodes connected — bot will retry in background")
 	}
 
+	b.ProbeNodeHealth() // flag WAF-blocked / proxy-dead nodes before traffic
+
 	go b.RestoreSnapshots()
 
 	slog.Info("hex-music-bot is running. Press CTRL-C to exit.")
@@ -139,4 +141,7 @@ func main() {
 	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-s
 	slog.Info("shutting down")
+	for p := range b.Lavalink.Players() {
+		b.SaveSnapshot(p.GuildID)
+	}
 }

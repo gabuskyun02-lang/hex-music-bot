@@ -11,7 +11,6 @@ import (
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 
-	"hex-music-bot/internal/player"
 	"hex-music-bot/internal/ui"
 )
 
@@ -34,26 +33,51 @@ func NewCardManager(b *Bot) *CardManager {
 	return &CardManager{b: b, cards: make(map[snowflake.ID]*cardEntry)}
 }
 
+// Create posts a fresh live card. Serialized per guild: two concurrent
+// Creates would otherwise race past the cancel window and orphan a ticker
+// on a dead message.
 func (m *CardManager) Create(guildID, channelID snowflake.ID) {
 	m.mu.Lock()
 	if old, ok := m.cards[guildID]; ok {
 		old.cancel()
 		delete(m.cards, guildID)
 	}
+	// Reserve the slot so concurrent Create/Refresh see no card until the
+	// new message exists.
+	reserve := &cardEntry{}
+	m.cards[guildID] = reserve
 	m.mu.Unlock()
 
 	msg, err := m.b.Client.Rest.CreateMessage(channelID, discord.MessageCreate{
 		Flags:      discord.MessageFlagIsComponentsV2,
 		Components: m.b.renderCard(guildID),
 	})
+	m.mu.Lock()
+	if m.cards[guildID] != reserve { // superseded while creating
+		m.mu.Unlock()
+		if err == nil {
+			_ = m.b.Client.Rest.DeleteMessage(channelID, msg.ID)
+		}
+		return
+	}
+	m.mu.Unlock()
 	if err != nil {
 		slog.Error("card create failed", slog.String("guild", guildID.String()), slog.Any("err", err))
+		m.mu.Lock()
+		delete(m.cards, guildID)
+		m.mu.Unlock()
 		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	entry := &cardEntry{channelID: channelID, messageID: msg.ID, cancel: cancel}
 	m.mu.Lock()
+	if m.cards[guildID] != reserve { // superseded while creating
+		cancel()
+		m.mu.Unlock()
+		_ = m.b.Client.Rest.DeleteMessage(channelID, msg.ID)
+		return
+	}
 	m.cards[guildID] = entry
 	m.mu.Unlock()
 	go m.ticker(ctx, guildID, entry)
@@ -76,7 +100,7 @@ func (m *CardManager) Refresh(guildID snowflake.ID) {
 	m.mu.Lock()
 	entry, ok := m.cards[guildID]
 	m.mu.Unlock()
-	if ok {
+	if ok && entry.messageID != 0 { // zero = creation in progress
 		m.edit(guildID, entry, m.b.renderCard(guildID))
 	}
 }
@@ -85,7 +109,7 @@ func (m *CardManager) Finalize(guildID snowflake.ID, reason string) {
 	m.mu.Lock()
 	entry, ok := m.removeLocked(guildID)
 	m.mu.Unlock()
-	if !ok {
+	if !ok || entry.messageID == 0 { // zero = creation in progress
 		return
 	}
 	if _, err := m.b.Client.Rest.UpdateMessage(entry.channelID, entry.messageID,
@@ -113,7 +137,7 @@ func (m *CardManager) Lookup(guildID snowflake.ID) *cardEntry {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	entry, ok := m.cards[guildID]
-	if !ok {
+	if !ok || entry.messageID == 0 { // zero = creation in progress
 		return nil
 	}
 	return entry
@@ -129,7 +153,7 @@ func (m *CardManager) edit(guildID snowflake.ID, entry *cardEntry, comps []disco
 
 // renderCard builds the live Components V2 card.
 func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
-	container := discord.ContainerComponent{AccentColor: 0x5865F2}
+	container := discord.ContainerComponent{AccentColor: ui.SourceBadgeFor("").Color}
 	state := b.Player.Get(guildID)
 	p := b.Lavalink.ExistingPlayer(guildID)
 
@@ -145,15 +169,15 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 	}
 
 	track := *p.Track
+	badge := ui.SourceBadgeFor(track.Info.SourceName)
+	sourceName := formatSourceName(track.Info.SourceName)
 	status := "▶ Now playing"
 	if p.Paused {
 		status = "⏸ Paused"
 	}
-
-	sourceName := formatSourceName(track.Info.SourceName)
 	header := discord.TextDisplayComponent{
-		Content: fmt.Sprintf("**%s**\n%s\n%s · 🌐 `%s`",
-			status, ui.TrackMarkdown(track), track.Info.Author, sourceName),
+		Content: fmt.Sprintf("%s **%s**\n%s\n%s · %s `%s`",
+			badge.Emoji, status, ui.TrackMarkdown(track), track.Info.Author, badge.Emoji, sourceName),
 	}
 	section := discord.SectionComponent{
 		Components: []discord.SectionSubComponent{header},
@@ -212,6 +236,7 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 		loop:       loopStr,
 		queueEmpty: state.Len() == 0,
 	}
+	container.AccentColor = badge.Color
 	container.Components = append(container.Components, asContainerSubs(cardButtons(cs))...)
 
 	return []discord.LayoutComponent{container}
@@ -230,7 +255,6 @@ type cardState struct {
 	locked     bool
 	paused     bool
 	loop       string
-	shuffled   bool
 	queueEmpty bool
 }
 
@@ -257,7 +281,6 @@ func cardButtons(cs cardState) []discord.LayoutComponent {
 	if cs.loop != "off" {
 		loopStyle = discord.ButtonStyleSuccess
 	}
-
 
 	return []discord.LayoutComponent{
 		row(
@@ -304,5 +327,3 @@ func formatSourceName(raw string) string {
 		return raw
 	}
 }
-
-var _ = player.LoopOff // keep import when LoopOff unused directly

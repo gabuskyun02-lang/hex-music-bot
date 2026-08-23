@@ -1,4 +1,5 @@
-version: "3.8"
+# Requires DISCORD_TOKEN and BOT_OWNER_ID in the environment or a .env file
+# next to this compose file.
 
 services:
   lavalink:
@@ -21,9 +22,8 @@ services:
       - lavalink
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN}
-      LAVALINK_ADDRESS: lavalink:2333
-      LAVALINK_PASSWORD: youshallnotpass
-      LAVALINK_SECURE: "false"
+      BOT_OWNER_ID: ${BOT_OWNER_ID}
+      LAVALINK_NODES: main:youshallnotpass@lavalink:2333
       DB_PATH: /app/data/hex-music-bot.db
       METRICS_ADDR: ":9090"
       AUTO_PAUSE: "true"

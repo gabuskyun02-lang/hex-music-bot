@@ -3,12 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
-	"runtime"
-	"strings"
-	"time"
-
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/disgoorg/disgolink/v4/disgolink"
 
@@ -29,8 +29,8 @@ func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	uptime := time.Since(startTime)
 
 	embed := discord.Embed{
-		Title:       "📄 Debug Panel",
-		Color:       0x5865F2,
+		Title: "📄 Debug Panel",
+		Color: 0x5865F2,
 		Description: fmt.Sprintf("```==    System Info    ==\n• Goroutines: %d\n• Heap Alloc: %.1f MB\n• Sys Memory: %.1f MB```",
 			runtime.NumGoroutine(),
 			float64(mem.HeapAlloc)/(1024*1024),
@@ -50,12 +50,12 @@ func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 
 	embed.Fields = append(embed.Fields,
 		discord.EmbedField{
-			Name:   "🤖 Bot Information",
-			Value:  fmt.Sprintf("```• GUILDS:  %d\n• PLAYERS: %d```", guildCount, activePlayers),
+			Name:  "🤖 Bot Information",
+			Value: fmt.Sprintf("```• GUILDS:  %d\n• PLAYERS: %d```", guildCount, activePlayers),
 		},
 		discord.EmbedField{
-			Name:   "⏱ Uptime",
-			Value:  formatUptime(uptime),
+			Name:  "⏱ Uptime",
+			Value: formatUptime(uptime),
 		},
 	)
 
@@ -98,29 +98,74 @@ func Debug(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	})
 }
 
-// Ping measures REST round-trip time to the best Lavalink node.
+// Ping measures REST round-trip time on every connected node. Uses /v4/info
+// (the route playback actually depends on) — some hosts' WAFs block the bare
+// /version path while /v4/* works fine.
 func Ping(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	node := b.Lavalink.BestNode()
-	if node == nil {
-		return b.Reply(event, "📡 No Lavalink node connected")
+	// Acknowledge immediately — probing every node can exceed Discord's
+	// 3-second interaction window (one dead node costs ~3s on its own).
+	if err := event.DeferCreateMessage(false); err != nil {
+		return err
 	}
 
-	start := time.Now()
-	_, err := node.Rest.Version(context.Background())
-	latency := time.Since(start)
+	nodes := map[string]*disgolink.Node{}
+	var mu sync.Mutex
+	b.Lavalink.Nodes()(func(n *disgolink.Node) bool {
+		mu.Lock()
+		nodes[n.Config.Name] = n
+		mu.Unlock()
+		return true
+	})
+	if len(nodes) == 0 {
+		return b.EditReply(event, "📡 No Lavalink node connected")
+	}
 
-	statusEmoji := "🟢"
-	if latency > 500*time.Millisecond {
-		statusEmoji = "🟡"
+	type result struct {
+		line string
 	}
-	if latency > 2*time.Second || err != nil {
-		statusEmoji = "🔴"
+	results := make(chan result, len(nodes))
+	for _, n := range nodes {
+		go func(n *disgolink.Node) {
+			start := time.Now()
+			ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+			defer cancel()
+			info, err := n.Rest.Info(ctx)
+			latency := time.Since(start).Round(time.Millisecond)
+			if err != nil {
+				b.MarkNodeRestDead(n.Config.Name)
+			} else {
+				b.ClearNodeRestDead(n.Config.Name)
+			}
+
+			status := "🟢"
+			switch {
+			case err != nil:
+				status = "🔴"
+			case latency > 500*time.Millisecond:
+				status = "🟡"
+			}
+			line := fmt.Sprintf("%s `%s` — %v", status, n.Config.Name, latency)
+			if err == nil && info != nil {
+				line += fmt.Sprintf(" · v%s · %d source(s)", info.Version.Semver[:min(7, len(info.Version.Semver))], len(info.SourceManagers))
+			}
+			if err != nil {
+				line += " — unreachable"
+			}
+			results <- result{line: line}
+		}(n)
 	}
-	if err != nil {
-		return b.Reply(event, fmt.Sprintf("%s Node: `%s` — unreachable (%v)", statusEmoji, node.Config.Name, err))
+
+	lines := make([]string, 0, len(nodes))
+	for range nodes {
+		lines = append(lines, (<-results).line)
 	}
-	return b.Reply(event, fmt.Sprintf("%s **%s** — REST round-trip: `%v`",
-		statusEmoji, node.Config.Name, latency.Round(time.Millisecond)))
+
+	sb := strings.Builder{}
+	sb.WriteString("**📡 Lavalink nodes**\n")
+	for _, l := range lines {
+		sb.WriteString(l + "\n")
+	}
+	return b.EditReply(event, sb.String())
 }
 
 // Stats shows public playback statistics.
@@ -145,8 +190,8 @@ func Stats(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	}
 
 	embed := discord.Embed{
-		Title:       "📊 hex-music-bot Stats",
-		Color:       0x5865F2,
+		Title: "📊 hex-music-bot Stats",
+		Color: 0x5865F2,
 		Description: fmt.Sprintf("• Uptime: `%s`\n• Guilds: `%d`\n• Active Nodes: `%d`\n• Total Players: `%d`\n• Currently Playing: `%d`",
 			formatUptime(uptime), guildCount, activeNodes, totalPlayers, totalPlaying),
 	}

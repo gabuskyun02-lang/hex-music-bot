@@ -14,9 +14,9 @@ import (
 
 // Metrics tracks bot-level counters using atomic operations.
 type Metrics struct {
-	mu           sync.Mutex
-	startTime    time.Time
-	counters     map[string]*counter
+	mu        sync.Mutex
+	startTime time.Time
+	counters  map[string]*counter
 }
 
 type counter struct {

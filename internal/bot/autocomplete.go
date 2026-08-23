@@ -32,7 +32,7 @@ func (b *Bot) searchSuggestions(query string) []discord.AutocompleteChoice {
 	if utf8.RuneCountInString(query) < 3 {
 		return []discord.AutocompleteChoice{}
 	}
-	node := b.Lavalink.BestNode()
+	node := b.BestHealthyNode()
 	if node == nil {
 		return []discord.AutocompleteChoice{}
 	}

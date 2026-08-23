@@ -12,7 +12,6 @@ import (
 	"hex-music-bot/internal/store"
 )
 
-
 const historyDisplayLimit = 10
 
 // History shows recently played tracks for the guild or a specific user.
@@ -30,11 +29,10 @@ func History(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	}
 
 	if len(records) == 0 {
-		return b.Reply(event, "No play history yet — play something first!")
+		return b.ReplyEmbed(event, hexbot.InfoEmbed("🕘 History", "No play history yet — play something first!"))
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%s (%d):\n", label, len(records))
 	for i, r := range records {
 		ts := ""
 		if !r.PlayedAt.IsZero() {
@@ -44,13 +42,27 @@ func History(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 		if len([]rune(line)) > 60 {
 			line = string([]rune(line)[:57]) + "…"
 		}
+		req := ""
+		if r.RequesterID != "" && r.RequesterID != "0" {
+			req = fmt.Sprintf(" · <@%s>", r.RequesterID)
+		}
 		if r.URI != "" {
-			fmt.Fprintf(&sb, "%d. [`%s`](<%s>) `%s`\n", i+1, line, r.URI, ts)
+			fmt.Fprintf(&sb, "**%d.** [`%s`](<%s>)%s `%s`\n", i+1, line, r.URI, req, ts)
 		} else {
-			fmt.Fprintf(&sb, "%d. `%s` `%s`\n", i+1, line, ts)
+			fmt.Fprintf(&sb, "**%d.** `%s`%s `%s`\n", i+1, line, req, ts)
 		}
 	}
-	return b.Reply(event, sb.String())
+
+	title := "🕘 Recently played"
+	if label != "" {
+		title = "🕘 Recent plays"
+	}
+	return b.ReplyEmbed(event, discord.Embed{
+		Title:       title,
+		Description: strings.TrimRight(sb.String(), "\n"),
+		Color:       0x5865F2,
+		Footer:      &discord.EmbedFooter{Text: fmt.Sprintf("%d track(s) · most recent first", len(records))},
+	})
 }
 
 // Taste manages per-user preferred artists for autoplay blending.

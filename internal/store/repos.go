@@ -27,6 +27,7 @@ type GuildSettings struct {
 	DJRoleID         string
 	AllowDuplicate   bool
 }
+
 func (s *Store) GetGuildSettings(ctx context.Context, guildID string) (*GuildSettings, error) {
 	const q = `SELECT default_volume, locale, request_channel_id, mode_247, autoplay, autoplay_level, dj_role_id, duplicate_track
 		FROM guild_settings WHERE guild_id = ?`

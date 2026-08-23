@@ -69,7 +69,7 @@ func (b *Bot) RestoreSnapshots() {
 			continue
 		}
 
-		node := b.Lavalink.BestNode()
+		node := b.BestHealthyNode()
 		if node == nil {
 			continue
 		}
@@ -95,6 +95,14 @@ func (b *Bot) RestoreSnapshots() {
 					}
 				}
 			}()
+		}
+		if snap.TextChannelID != "" {
+			if chID, err := snowflake.Parse(snap.TextChannelID); err == nil {
+				go func() {
+					time.Sleep(3 * time.Second) // after playback restore starts
+					b.Cards.Create(guildID, chID)
+				}()
+			}
 		}
 		slog.Info("24/7 session restored", slog.String("guild", snap.GuildID))
 	}

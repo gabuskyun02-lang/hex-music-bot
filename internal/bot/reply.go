@@ -1,8 +1,6 @@
 package bot
 
 import (
-	"fmt"
-
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
 	"github.com/disgoorg/omit"
@@ -28,16 +26,6 @@ func (b *Bot) EditReply(event *events.ApplicationCommandInteractionCreate, conte
 	return err
 }
 
-// EditReplyEmbed replaces a deferred interaction response with an embed.
-func (b *Bot) EditReplyEmbed(event *events.ApplicationCommandInteractionCreate, embed discord.Embed) error {
-	_, err := b.Client.Rest.UpdateInteractionResponse(
-		event.ApplicationID(),
-		event.Token(),
-		discord.MessageUpdate{Embeds: &[]discord.Embed{embed}},
-	)
-	return err
-}
-
 // SuccessEmbed returns a green-tinted confirmation embed.
 func SuccessEmbed(message string) discord.Embed {
 	return discord.Embed{
@@ -55,12 +43,10 @@ func ErrorEmbed(message string) discord.Embed {
 }
 
 // InfoEmbed returns a blue-tinted info embed with title and description.
-func InfoEmbed(title string, description string) discord.Embed {
+func InfoEmbed(title, description string) discord.Embed {
 	return discord.Embed{
 		Title:       title,
 		Description: description,
 		Color:       0x5865F2,
 	}
 }
-
-var _ = fmt.Sprintf // keep fmt if needed by future helpers

@@ -119,6 +119,12 @@ func (b *Bot) Halt(guildID snowflake.ID) {
 	b.Cards.Finalize(guildID, "stopped")
 }
 
+// ForgetGuild releases all per-guild bookkeeping when the bot leaves voice.
+func (b *Bot) ForgetGuild(guildID snowflake.ID) {
+	b.Votes.Cancel(guildID, "skip")
+	b.failover.Clear(guildID)
+}
+
 // StepVolume adjusts volume by delta, clamped to Lavalink's 0-1000 range.
 // Returns the applied level; ok=false when no player exists.
 func (b *Bot) StepVolume(guildID snowflake.ID, delta int) (int, bool) {

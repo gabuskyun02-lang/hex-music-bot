@@ -25,6 +25,7 @@ func (b *Bot) OnVoiceStateUpdate(event *events.GuildVoiceStateUpdate) {
 			b.voice.OnBotLeft(guildID)
 			b.Player.Delete(guildID)
 			b.Cards.Drop(guildID)
+			b.ForgetGuild(guildID)
 			slog.Debug("left voice, dropped player state", slog.String("guild", guildID.String()))
 		}
 		return

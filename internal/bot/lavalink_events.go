@@ -3,13 +3,15 @@ package bot
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/disgoorg/disgolink/v4/disgolink"
 
 	"hex-music-bot/internal/player"
 )
 
-// OnTrackStart cancels idle disconnect and refreshes the card.
+// OnTrackStart cancels idle disconnect, resets skip votes for the incoming
+// track, persists the 24/7 snapshot, and refreshes the card.
 func (b *Bot) OnTrackStart(event *disgolink.PlayerTrackStartEvent) {
 	b.Metrics.Inc("hex_music_bot_tracks_played")
 	slog.Info("track started",
@@ -17,6 +19,8 @@ func (b *Bot) OnTrackStart(event *disgolink.PlayerTrackStartEvent) {
 		slog.String("title", event.Track.Info.Title),
 	)
 	b.voice.CancelIdleDisconnect(event.GetGuildID())
+	b.Votes.Cancel(event.GetGuildID(), "skip")
+	go b.SaveSnapshot(event.GetGuildID())
 	b.Cards.Refresh(event.GetGuildID())
 }
 
@@ -89,4 +93,30 @@ func (b *Bot) OnTrackStuck(event *disgolink.PlayerTrackStuckEvent) {
 
 func (b *Bot) OnWebSocketClosed(event *disgolink.PlayerWebSocketClosedEvent) {
 	slog.Warn("lavalink voice websocket closed", slog.Any("event", event))
+
+	// 4006 session no longer valid, 4009 voice server crashed, 4015 session
+	// timed out — Discord will not resume these; rejoin to rebuild the
+	// voice connection. 24/7 guilds come back automatically.
+	if event.Code != 4006 && event.Code != 4009 && event.Code != 4015 {
+		return
+	}
+	guildID := event.GuildID
+	chID, ok := b.voice.ChannelFor(guildID)
+	if !ok {
+		return // user-initiated leave or never connected
+	}
+	settings, err := b.Store.GetGuildSettings(context.Background(), guildID.String())
+	if err == nil && !settings.Mode247 {
+		return // normal mode: let users rejoin manually
+	}
+	slog.Info("rejoining voice after fatal WS close",
+		slog.String("guild", guildID.String()),
+		slog.Int("code", event.Code),
+	)
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := b.Client.UpdateVoiceState(context.TODO(), guildID, &chID, false, false); err != nil {
+			slog.Error("WS-close rejoin failed", slog.Any("err", err))
+		}
+	}()
 }

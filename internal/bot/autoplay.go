@@ -88,7 +88,7 @@ func (b *Bot) findAutoplayCandidates(ctx context.Context, guildID snowflake.ID, 
 		return nil
 	}
 
-	node := b.Lavalink.BestNode()
+	node := b.BestHealthyNode()
 	if node == nil {
 		return nil
 	}

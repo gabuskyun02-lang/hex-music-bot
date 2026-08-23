@@ -8,7 +8,6 @@ import (
 	"github.com/disgoorg/disgolink/v4/lavalink"
 )
 
-
 // FormatDuration renders milliseconds as h:mm:ss or m:ss.
 func FormatDuration(d lavalink.Duration) string {
 	totalMinutes := d.Minutes()
@@ -26,6 +25,35 @@ func TrackMarkdown(track lavalink.Track) string {
 		return fmt.Sprintf("`%s`", track.Info.Title)
 	}
 	return fmt.Sprintf("[`%s`](<%s>)", track.Info.Title, *track.Info.URI)
+}
+
+// SourceBadge is the per-source emoji + brand accent color, following the
+// convention used by lucky/beatra (MIT).
+type SourceBadge struct {
+	Emoji string
+	Color int
+}
+
+var sourceBadges = map[string]SourceBadge{
+	"youtube":      {Emoji: "🔴", Color: 0xFF0000},
+	"youtubemusic": {Emoji: "🔴", Color: 0xFF0000},
+	"spotify":      {Emoji: "🟢", Color: 0x1DB954},
+	"soundcloud":   {Emoji: "🟠", Color: 0xFF5500},
+	"applemusic":   {Emoji: "🍎", Color: 0xFA2D48},
+	"deezer":       {Emoji: "🟣", Color: 0xA238FF},
+	"tidal":        {Emoji: "🔵", Color: 0x00B3E3},
+	"http":         {Emoji: "🔗", Color: 0x5865F2},
+}
+
+var defaultBadge = SourceBadge{Emoji: "🎵", Color: 0x5865F2}
+
+// SourceBadgeFor returns the badge for a Lavalink source name (lowercased
+// match; unknown sources get a neutral default).
+func SourceBadgeFor(sourceName string) SourceBadge {
+	if b, ok := sourceBadges[strings.ToLower(sourceName)]; ok {
+		return b
+	}
+	return defaultBadge
 }
 
 // ParseTimeStr accepts "HH:MM:SS", "MM:SS", or "SS" and returns milliseconds.

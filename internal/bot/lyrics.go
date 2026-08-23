@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 
@@ -14,6 +15,11 @@ type LyricDoc struct {
 	SessionID string
 	Pages     []string
 	Page      int
+	// Embed metadata for clean rendering (beatra-style lyrics embed).
+	Artist    string
+	Title     string
+	SourceURL string
+	Color     int
 }
 
 const lyricsCacheCap = 200
@@ -72,6 +78,23 @@ func (c *LyricsCache) Advance(sessionID string, delta int) (*LyricDoc, bool) {
 	return doc, true
 }
 
+// LyricEmbed builds the clean lyrics embed for a doc's current page,
+// beatra-style: 🎤 title, artist credit, page footer.
+func LyricEmbed(doc *LyricDoc) discord.Embed {
+	embed := discord.Embed{
+		Title:       "🎤 " + doc.Title,
+		Description: doc.Pages[doc.Page],
+		Color:       doc.Color,
+		Footer: &discord.EmbedFooter{
+			Text: fmt.Sprintf("by %s · Page %d/%d", doc.Artist, doc.Page+1, len(doc.Pages)),
+		},
+	}
+	if doc.SourceURL != "" {
+		embed.URL = doc.SourceURL
+	}
+	return embed
+}
+
 // LyricButtons builds the pager row for a doc state.
 func LyricButtons(doc *LyricDoc) discord.LayoutComponent {
 	prev := discord.NewSecondaryButton("◀", "hexlyr:p:"+doc.SessionID)
@@ -96,13 +119,16 @@ func (b *Bot) handleLyricsButton(event *events.ComponentInteractionCreate, custo
 	doc, ok := b.Lyrics.Advance(parts[2], delta)
 	if !ok {
 		_ = event.UpdateMessage(discord.MessageUpdate{
-			Content: omit.Ptr("Lyrics session expired — run /lyrics again"),
+			Content:    omit.Ptr("Lyrics session expired — run /lyrics again"),
+			Embeds:     &[]discord.Embed{},
+			Components: &[]discord.LayoutComponent{},
 		})
 		return
 	}
 	components := []discord.LayoutComponent{LyricButtons(doc)}
 	_ = event.UpdateMessage(discord.MessageUpdate{
-		Content:    omit.Ptr(doc.Pages[doc.Page]),
+		Content:    omit.Ptr(""),
+		Embeds:     &[]discord.Embed{LyricEmbed(doc)},
 		Components: &components,
 	})
 }

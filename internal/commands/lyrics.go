@@ -54,11 +54,22 @@ func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ 
 	}
 
 	sessionID := fmt.Sprintf("lyr%d", time.Now().UnixNano()%1e9)
-	doc := &hexbot.LyricDoc{SessionID: sessionID, Pages: pages, Page: 0}
+	doc := &hexbot.LyricDoc{
+		SessionID: sessionID,
+		Pages:     pages,
+		Page:      0,
+		Artist:    res.Artist,
+		Title:     res.Title,
+		Color:     0x5865F2,
+	}
+	if track.Info.URI != nil {
+		doc.SourceURL = *track.Info.URI
+	}
+	b.Lyrics.Put(doc)
 
 	components := []discord.LayoutComponent{hexbot.LyricButtons(doc)}
 	_, err = b.Client.Rest.CreateMessage(event.Channel().ID(), discord.MessageCreate{
-		Content:    pages[0],
+		Embeds:     []discord.Embed{hexbot.LyricEmbed(doc)},
 		Components: components,
 	})
 	if err != nil {
@@ -111,4 +122,3 @@ func buildLyricPages(res *lyrics.Lyrics, fallbackTitle string) []string {
 	}
 	return pages
 }
-

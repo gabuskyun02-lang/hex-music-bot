@@ -63,11 +63,10 @@ func (b *Bot) AttemptFailover(guildID snowflake.ID, failed lavalink.Track) bool 
 		slog.String("title", failed.Info.Title),
 	)
 
-	node := b.Lavalink.BestNode()
+	node := b.BestHealthyNode()
 	if node == nil {
 		return false
 	}
-	b.failover.markFailed(guildID, failed.Info.Identifier)
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
@@ -89,6 +88,7 @@ func (b *Bot) AttemptFailover(guildID snowflake.ID, failed lavalink.Track) bool 
 			slog.String("guild", guildID.String()),
 			slog.String("title", failed.Info.Title),
 		)
+		b.failover.markFailed(guildID, failed.Info.Identifier)
 		return false
 	}
 
@@ -98,6 +98,7 @@ func (b *Bot) AttemptFailover(guildID snowflake.ID, failed lavalink.Track) bool 
 	}
 	if err := p.Update(ctx, disgolink.WithTrack(*alt)); err != nil {
 		slog.Error("failover playback failed", slog.Any("err", err))
+		b.failover.markFailed(guildID, failed.Info.Identifier)
 		return false
 	}
 	b.Metrics.Inc("hex_music_bot_failovers_succeeded")
@@ -117,8 +118,8 @@ func (b *Bot) SkipBroken(guildID snowflake.ID, broken lavalink.Track) {
 	if b.failover.hasFailed(guildID, broken.Info.Identifier) {
 		return // duplicate event, already handled
 	}
-	b.failover.markFailed(guildID, broken.Info.Identifier)
 	next, stopped := b.SkipNext(guildID)
+	b.failover.markFailed(guildID, broken.Info.Identifier)
 	b.Cards.Refresh(guildID)
 	if stopped {
 		b.notifyChannel(guildID, fmt.Sprintf("❌ `%s` failed and the queue is empty.", broken.Info.Title))

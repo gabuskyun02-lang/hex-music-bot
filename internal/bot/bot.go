@@ -3,9 +3,11 @@
 package bot
 
 import (
+	"sync"
+
+	disgobot "github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
-	disgobot "github.com/disgoorg/disgo/bot"
 
 	"github.com/disgoorg/disgolink/v4/disgolink"
 
@@ -29,6 +31,9 @@ type Bot struct {
 	Lyrics   *LyricsCache
 	Metrics  *metrics.Metrics
 	Filters  *filterManager
+	// restDead tracks nodes whose REST API failed (WAF block, proxy death);
+	// BestNode skips them so playback never lands on a WS-alive/REST-dead node.
+	restDead sync.Map
 	failover *FailoverManager
 	voice    *VoiceWatch
 	Votes    *VoteManager

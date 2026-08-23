@@ -19,7 +19,7 @@ import (
 
 // resolveTrack loads a track from an identifier string.
 func resolveTrack(b *hexbot.Bot, identifier string) (*lavalink.Track, []lavalink.Track, error) {
-	node := b.Lavalink.BestNode()
+	node := b.BestHealthyNode()
 	if node == nil {
 		return nil, nil, fmt.Errorf("lavalink node not connected")
 	}
@@ -36,20 +36,17 @@ func resolveTrack(b *hexbot.Bot, identifier string) (*lavalink.Track, []lavalink
 				enqueued = p.Tracks[1:]
 			}
 		},
-		func(ts []lavalink.Track) { if len(ts) > 0 { toPlay = &ts[0] } },
+		func(ts []lavalink.Track) {
+			if len(ts) > 0 {
+				toPlay = &ts[0]
+			}
+		},
 		func() {},
 		func(err error) {},
 	))
 	return toPlay, enqueued, nil
 }
 
-// insertAtTop places a track at the front of the queue.
-func insertAtTop(b *hexbot.Bot, guildID snowflake.ID, track lavalink.Track) {
-	state := b.Player.Get(guildID)
-	tracks := state.Snapshot()
-	newQueue := append([]lavalink.Track{track}, tracks...)
-	state.ReplaceQueue(newQueue)
-}
 // checkDuplicate returns true when the guild blocks duplicates and the track
 // title already exists in the queue or is currently playing.
 func checkDuplicate(b *hexbot.Bot, guildID snowflake.ID, title string) bool {
@@ -94,7 +91,7 @@ func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	p := b.Lavalink.ExistingPlayer(guildID)
 
 	if p != nil && p.Track != nil {
-		queue.InsertAt(0, *toPlay)
+		queue.InsertAtAs(0, *toPlay, event.User().ID)
 		msg := fmt.Sprintf("📌 %s will play next", ui.TrackMarkdown(*toPlay))
 		if len(enqueued) > 0 {
 			queue.EnqueueAs(event.User().ID, enqueued...)
@@ -269,16 +266,4 @@ func Rewind(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 		return err
 	}
 	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("⏪ Rewound to `%s`", ui.FormatDuration(lavalink.Duration(newPos)))))
-}
-
-// Replay restarts the current track from the beginning.
-func Replay(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
-	player := b.Lavalink.ExistingPlayer(*event.GuildID())
-	if player == nil || player.Track == nil {
-		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
-	}
-	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(0))); err != nil {
-		return err
-	}
-	return b.ReplyEmbed(event, hexbot.SuccessEmbed("🔄 Restarted from beginning"))
 }

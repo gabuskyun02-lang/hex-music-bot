@@ -20,6 +20,9 @@ var filterPresets = map[string]func() *lavalink.Filters{
 		}
 		return &lavalink.Filters{Equalizer: &eq}
 	},
+	"nightcore": func() *lavalink.Filters {
+		return &lavalink.Filters{Timescale: &lavalink.Timescale{Rate: 1.25, Pitch: 1.25}}
+	},
 	"vaporwave": func() *lavalink.Filters {
 		return &lavalink.Filters{Timescale: &lavalink.Timescale{Rate: 0.8, Pitch: 0.8}}
 	},

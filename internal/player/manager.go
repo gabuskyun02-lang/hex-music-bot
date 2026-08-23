@@ -51,12 +51,12 @@ const historyCap = 50
 // State is one guild's playback state. All methods are safe for concurrent
 // use from gateway events and interaction handlers.
 type State struct {
-	mu         sync.Mutex
-	queue      []lavalink.Track
-	history    []lavalink.Track // finished tracks, most recent last
-	loop       LoopMode
-	requesters        map[string]snowflake.ID // track identifier -> requester user ID
-	currentRequester  snowflake.ID            // who requested the currently playing track
+	mu               sync.Mutex
+	queue            []lavalink.Track
+	history          []lavalink.Track // finished tracks, most recent last
+	loop             LoopMode
+	requesters       map[string]snowflake.ID // track identifier -> requester user ID
+	currentRequester snowflake.ID            // who requested the currently playing track
 }
 
 // EnqueueAs appends tracks to the queue, recording who requested them.
@@ -79,21 +79,8 @@ func (s *State) Enqueue(tracks ...lavalink.Track) {
 	s.queue = append(s.queue, tracks...)
 }
 
-// Next pops and returns the next queued track along with its requester.
-func (s *State) NextWithRequester() (lavalink.Track, snowflake.ID, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.queue) == 0 {
-		return lavalink.Track{}, 0, false
-	}
-	track := s.queue[0]
-	s.queue = s.queue[1:]
-	requester := s.requesters[track.Info.Identifier]
-	delete(s.requesters, track.Info.Identifier)
-	return track, requester, true
-}
-
-// Next pops and returns the next queued track (no requester info).
+// Next pops and returns the next queued track (no requester info) and
+// promotes that track's requester to the current one.
 func (s *State) Next() (lavalink.Track, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -102,6 +89,8 @@ func (s *State) Next() (lavalink.Track, bool) {
 	}
 	track := s.queue[0]
 	s.queue = s.queue[1:]
+	s.currentRequester = s.requesters[track.Info.Identifier]
+	delete(s.requesters, track.Info.Identifier)
 	return track, true
 }
 
@@ -111,6 +100,9 @@ func (s *State) Drop(n int) {
 	defer s.mu.Unlock()
 	if n > len(s.queue) {
 		n = len(s.queue)
+	}
+	for _, t := range s.queue[:n] {
+		delete(s.requesters, t.Info.Identifier)
 	}
 	s.queue = s.queue[n:]
 }
@@ -127,6 +119,7 @@ func (s *State) ClearQueue() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.queue = nil
+	s.requesters = nil
 }
 
 // Len returns the number of queued tracks.
@@ -219,6 +212,7 @@ func (s *State) RemoveAt(index int) (lavalink.Track, bool) {
 		return lavalink.Track{}, false
 	}
 	track := s.queue[index]
+	delete(s.requesters, track.Info.Identifier)
 	s.queue = append(s.queue[:index], s.queue[index+1:]...)
 	return track, true
 }
@@ -253,11 +247,12 @@ func (s *State) RemoveDuplicates() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	seen := make(map[string]bool)
-	var kept []lavalink.Track
+	kept := make([]lavalink.Track, 0, len(s.queue))
 	removed := 0
 	for _, t := range s.queue {
 		key := strings.ToLower(t.Info.Title)
 		if seen[key] {
+			delete(s.requesters, t.Info.Identifier)
 			removed++
 			continue
 		}
@@ -280,23 +275,25 @@ func (s *State) PeekNext() (lavalink.Track, bool) {
 	return s.queue[0], true
 }
 
-// ReplaceQueue atomically replaces the entire queue with the provided tracks.
-func (s *State) ReplaceQueue(tracks []lavalink.Track) {
+// InsertAtAs inserts a track at the given 0-based index, recording its
+// requester. Negative index clamps to the front.
+func (s *State) InsertAtAs(index int, track lavalink.Track, requesterID snowflake.ID) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.queue = tracks
-}
-
-// InsertAt inserts a track at the given 0-based index in the queue.
-func (s *State) InsertAt(index int, track lavalink.Track) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if index < 0 {
+		index = 0
+	}
+	if s.requesters == nil {
+		s.requesters = make(map[string]snowflake.ID)
+	}
+	s.requesters[track.Info.Identifier] = requesterID
 	if index >= len(s.queue) {
 		s.queue = append(s.queue, track)
 		return
 	}
 	s.queue = append(s.queue[:index], append([]lavalink.Track{track}, s.queue[index:]...)...)
 }
+
 // HasDuplicate checks if a track with the same title is already in the queue.
 func (s *State) HasDuplicate(title string) bool {
 	s.mu.Lock()
@@ -309,6 +306,7 @@ func (s *State) HasDuplicate(title string) bool {
 	}
 	return false
 }
+
 // RequesterFor returns the user ID that requested a track by identifier.
 // Returns 0 if not found (e.g., track was enqueued without requester tracking).
 func (s *State) RequesterFor(identifier string) snowflake.ID {
@@ -316,6 +314,7 @@ func (s *State) RequesterFor(identifier string) snowflake.ID {
 	defer s.mu.Unlock()
 	return s.requesters[identifier]
 }
+
 // SetCurrentRequester records who requested the currently playing track.
 func (s *State) SetCurrentRequester(userID snowflake.ID) {
 	s.mu.Lock()

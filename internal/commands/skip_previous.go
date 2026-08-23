@@ -6,7 +6,6 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
-
 )
 
 // Skip drops ahead in the queue and starts what follows via the shared action.

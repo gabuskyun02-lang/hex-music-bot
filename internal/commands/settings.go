@@ -80,6 +80,7 @@ func SetDJRole(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate,
 	}
 	return b.Reply(event, fmt.Sprintf("🎧 DJ role set to <@&%s> — only members with this role can skip/stop/volume/leave", role))
 }
+
 // VoteSkip implements vote-based skipping when no DJ is set.
 func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	guildID := *event.GuildID()

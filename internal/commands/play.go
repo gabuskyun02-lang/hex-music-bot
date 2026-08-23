@@ -49,7 +49,7 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 		toPlay   *lavalink.Track
 		enqueued []lavalink.Track
 	)
-	node := b.Lavalink.BestNode()
+	node := b.BestHealthyNode()
 	if node == nil {
 		return b.EditReply(event, "Lavalink node not connected — try again in a moment")
 	}
@@ -107,10 +107,13 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	if err := b.Client.UpdateVoiceState(context.TODO(), guildID, voiceState.ChannelID, false, false); err != nil {
 		return err
 	}
-	if err := b.Lavalink.Player(guildID).Update(ctx, disgolink.WithTrack(*toPlay)); err != nil {
+	updateOpts := []disgolink.PlayerUpdateOpt{disgolink.WithTrack(*toPlay)}
+	if settings != nil && settings.DefaultVolume > 0 && settings.DefaultVolume != 100 {
+		updateOpts = append(updateOpts, disgolink.WithVolume(settings.DefaultVolume))
+	}
+	if err := b.Lavalink.Player(guildID).Update(ctx, updateOpts...); err != nil {
 		return err
 	}
-	queue.SetCurrentRequester(event.User().ID)
 	b.Cards.Create(guildID, event.Channel().ID())
 
 	message := fmt.Sprintf("Playing %s", ui.TrackMarkdown(*toPlay))

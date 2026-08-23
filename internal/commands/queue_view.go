@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgolink/v4/lavalink"
 
 	hexbot "hex-music-bot/internal/bot"
 	"hex-music-bot/internal/player"
@@ -19,22 +21,40 @@ func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	state := b.Player.Get(*event.GuildID())
 	tracks := state.Snapshot()
 	if len(tracks) == 0 {
-		return b.ReplyEmbed(event, hexbot.ErrorEmbed("The queue is empty"))
+		return b.ReplyEmbed(event, hexbot.InfoEmbed("📋 Queue", "The queue is empty — add something with `/play`"))
+	}
+
+	var total lavalink.Duration
+	for _, t := range tracks {
+		total += t.Info.Length
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "**Up next** (%d tracks) — loop: `%s`\n\n", len(tracks), state.LoopMode())
+	fmt.Fprintf(&sb, "**Up next** (%d tracks)\n\n", len(tracks))
 	for i, track := range tracks[:min(len(tracks), queueDisplayLimit)] {
-		fmt.Fprintf(&sb, "`%d.` %s\n", i+1, ui.TrackMarkdown(track))
+		fmt.Fprintf(&sb, "`%d.` %s · `%s`\n", i+1, ui.TrackMarkdown(track), ui.FormatDuration(track.Info.Length))
 	}
 	if remaining := len(tracks) - queueDisplayLimit; remaining > 0 {
-		fmt.Fprintf(&sb, "\n...and %d more", remaining)
+		fmt.Fprintf(&sb, "\n…and %d more", remaining)
 	}
 
+	status := []string{"🔁 Loop: `" + state.LoopMode().String() + "`"}
+	if b.Cfg != nil {
+		settings, _ := b.Store.GetGuildSettings(context.Background(), event.GuildID().String())
+		if settings != nil && settings.Autoplay {
+			status = append(status, "🔄 Autoplay")
+		}
+	}
+
+	inlineTrue := true
 	return b.ReplyEmbed(event, discord.Embed{
 		Title:       "📋 Queue",
 		Description: sb.String(),
 		Color:       0x5865F2,
+		Footer:      &discord.EmbedFooter{Text: strings.Join(status, " • ")},
+		Fields: []discord.EmbedField{
+			{Name: "Total runtime", Value: "`" + ui.FormatDuration(total) + "`", Inline: &inlineTrue},
+		},
 	})
 }
 
@@ -45,10 +65,12 @@ func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	track := *player.Track
+	badge := ui.SourceBadgeFor(track.Info.SourceName)
 	status := "▶ Now Playing"
 	if player.Paused {
 		status = "⏸ Paused"
 	}
+	status = badge.Emoji + " " + status
 
 	pos, total := player.Position(), track.Info.Length
 	const cells = 15
@@ -68,10 +90,11 @@ func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate
 	inlineTrue := true
 	embed := discord.Embed{
 		Title:       status,
-			Description: fmt.Sprintf("**%s**\n%s", ui.TrackMarkdown(track), track.Info.Author),
-		Color:       0x5865F2,
+		Description: fmt.Sprintf("**%s**\n%s", ui.TrackMarkdown(track), track.Info.Author),
+		Color:       badge.Color,
 		Fields: []discord.EmbedField{
 			{Name: "Progress", Value: progress},
+			{Name: "Source", Value: badge.Emoji + " `" + track.Info.SourceName + "`", Inline: &inlineTrue},
 			{Name: "Volume", Value: fmt.Sprintf("`%d`", player.Volume), Inline: &inlineTrue},
 			{Name: "Loop", Value: "`" + b.Player.Get(*event.GuildID()).LoopMode().String() + "`", Inline: &inlineTrue},
 			{Name: "Queue", Value: fmt.Sprintf("`%d` tracks", b.Player.Get(*event.GuildID()).Len()), Inline: &inlineTrue},

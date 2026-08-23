@@ -128,8 +128,20 @@ func parseNodes(raw string) ([]LavalinkNode, []error) {
 func parseNode(entry string) (LavalinkNode, error) {
 	var node LavalinkNode
 
-	// name:password@host:port
-	atIdx := strings.LastIndex(entry, "@")
+	// name:password@host:port — a password may itself contain '@' (e.g. a
+	// Discord invite URL), so pick the '@' whose remainder actually looks
+	// like host[:port][?flags] rather than blindly taking the last one.
+	atIdx := -1
+	for i := len(entry) - 1; i >= 0; i-- {
+		if entry[i] != '@' {
+			continue
+		}
+		rest := entry[i+1:]
+		if looksLikeHost(rest) {
+			atIdx = i
+			break
+		}
+	}
 	if atIdx < 0 {
 		return node, fmt.Errorf("missing @ separator")
 	}
@@ -180,6 +192,21 @@ func parseNode(entry string) (LavalinkNode, error) {
 	return node, nil
 }
 
+// looksLikeHost reports whether s resembles "[scheme://]host[:port][?flags]"
+// — non-empty, no spaces, and contains a dot or colon (after any scheme).
+func looksLikeHost(s string) bool {
+	if s == "" || strings.ContainsAny(s, " \t") {
+		return false
+	}
+	if idx := strings.IndexByte(s, '?'); idx >= 0 {
+		s = s[:idx]
+	}
+	s = strings.TrimPrefix(s, "wss://")
+	s = strings.TrimPrefix(s, "https://")
+	s = strings.TrimPrefix(s, "ws://")
+	s = strings.TrimPrefix(s, "http://")
+	return strings.ContainsAny(s, ".:")
+}
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
