@@ -55,7 +55,8 @@ type State struct {
 	queue      []lavalink.Track
 	history    []lavalink.Track // finished tracks, most recent last
 	loop       LoopMode
-	requesters map[string]snowflake.ID // track identifier -> requester user ID
+	requesters        map[string]snowflake.ID // track identifier -> requester user ID
+	currentRequester  snowflake.ID            // who requested the currently playing track
 }
 
 // EnqueueAs appends tracks to the queue, recording who requested them.
@@ -314,4 +315,17 @@ func (s *State) RequesterFor(identifier string) snowflake.ID {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.requesters[identifier]
+}
+// SetCurrentRequester records who requested the currently playing track.
+func (s *State) SetCurrentRequester(userID snowflake.ID) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.currentRequester = userID
+}
+
+// GetCurrentRequester returns who requested the currently playing track.
+func (s *State) GetCurrentRequester() snowflake.ID {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.currentRequester
 }

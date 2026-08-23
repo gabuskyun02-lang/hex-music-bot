@@ -110,6 +110,7 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	if err := b.Lavalink.Player(guildID).Update(ctx, disgolink.WithTrack(*toPlay)); err != nil {
 		return err
 	}
+	queue.SetCurrentRequester(event.User().ID)
 	b.Cards.Create(guildID, event.Channel().ID())
 
 	message := fmt.Sprintf("Playing %s", ui.TrackMarkdown(*toPlay))
