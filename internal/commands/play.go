@@ -36,7 +36,7 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	guildID := *event.GuildID()
 	voiceState, ok := b.Client.Caches.VoiceState(guildID, event.User().ID)
 	if !ok {
-		return b.Reply(event, "You need to be in a voice channel first")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need to be in a voice channel first"))
 	}
 	if err := event.DeferCreateMessage(false); err != nil {
 		return err

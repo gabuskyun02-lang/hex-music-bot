@@ -88,7 +88,7 @@ func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 	threshold := b.VoteThreshold(event)
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 
 	alreadyVoted, total, needed := b.Votes.VoteOrExecute(guildID, userID, "skip", threshold, func() {

@@ -17,27 +17,27 @@ import (
 // Volume sets the Lavalink player volume (Discord validates 0-1000).
 func Volume(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	if !b.IsDJ(event) {
-		return b.Reply(event, "⛔ You need the DJ role to change volume")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need the DJ role to change volume"))
 	}
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil {
-		return b.Reply(event, "No active player — play something first")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("No active player — play something first"))
 	}
 	level := data.Int("level")
 	if err := player.Update(context.TODO(), disgolink.WithVolume(level)); err != nil {
 		return err
 	}
-	return b.Reply(event, fmt.Sprintf("Volume set to `%d`", level))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🔊 Volume set to `%d`", level)))
 }
 
 // Seek jumps within the current track.
 func Seek(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	if !b.IsDJ(event) {
-		return b.Reply(event, "⛔ You need the DJ role to seek")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need the DJ role to seek"))
 	}
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 
 	unit := int(lavalink.Second)
@@ -48,7 +48,7 @@ func Seek(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	if err := player.Update(context.TODO(), disgolink.WithPosition(position)); err != nil {
 		return err
 	}
-	return b.Reply(event, fmt.Sprintf("Seeked to `%s`", ui.FormatDuration(position)))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("⏩ Seeked to `%s`", ui.FormatDuration(position))))
 }
 
 // Remove deletes one queued track by 1-based position.
@@ -60,9 +60,9 @@ func Remove(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	if !ok {
 		count := state.Len()
 		if count == 0 {
-			return b.Reply(event, "The queue is empty")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("The queue is empty"))
 		}
-		return b.Reply(event, fmt.Sprintf("Position out of range — queue has %d track(s)", count))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Position out of range — queue has %d track(s)", count)))
 	}
-	return b.Reply(event, fmt.Sprintf("Removed #%d: %s", index, ui.TrackMarkdown(track)))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🗑 Removed #%d: %s", index, ui.TrackMarkdown(track))))
 }

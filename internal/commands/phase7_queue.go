@@ -72,7 +72,7 @@ func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	guildID := *event.GuildID()
 	vs, ok := b.Client.Caches.VoiceState(guildID, event.User().ID)
 	if !ok {
-		return b.Reply(event, "You need to be in a voice channel first")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need to be in a voice channel first"))
 	}
 	if err := event.DeferCreateMessage(false); err != nil {
 		return err
@@ -117,7 +117,7 @@ func PlaySkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 	guildID := *event.GuildID()
 	vs, ok := b.Client.Caches.VoiceState(guildID, event.User().ID)
 	if !ok {
-		return b.Reply(event, "You need to be in a voice channel first")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need to be in a voice channel first"))
 	}
 	if err := event.DeferCreateMessage(false); err != nil {
 		return err
@@ -151,7 +151,7 @@ func SkipTo(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	guildID := *event.GuildID()
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 
 	pos := data.Int("position") - 1
@@ -161,12 +161,12 @@ func SkipTo(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	next, ok := state.Next()
 	if !ok {
 		_ = player.Update(context.TODO(), disgolink.WithNullTrack())
-		return b.Reply(event, "Skipped — queue is empty")
+		return b.ReplyEmbed(event, hexbot.SuccessEmbed("Skipped — queue is empty"))
 	}
 	if err := player.Update(context.TODO(), disgolink.WithTrack(next)); err != nil {
 		return err
 	}
-	return b.Reply(event, "⏭ Skipped to "+ui.TrackMarkdown(next))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("⏭ Skipped to "+ui.TrackMarkdown(next)))
 }
 
 // Move moves a queued song to a different position.
@@ -177,11 +177,11 @@ func Move(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 
 	if !state.MoveTrack(fromIdx, toIdx) {
 		count := state.Len()
-		return b.Reply(event, fmt.Sprintf("Position out of range — queue has %d track(s)", count))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Position out of range — queue has %d track(s)", count)))
 	}
 	snap := state.Snapshot()
 	title := snap[toIdx].Info.Title
-	return b.Reply(event, fmt.Sprintf("🔀 Moved **%s** to position #%d", title, toIdx+1))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🔀 Moved **%s** to position #%d", title, toIdx+1)))
 }
 
 // Swap exchanges two queued songs by position.
@@ -192,36 +192,36 @@ func Swap(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 
 	if !state.SwapTracks(aIdx, cIdx) {
 		count := state.Len()
-		return b.Reply(event, fmt.Sprintf("Position out of range — queue has %d track(s)", count))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Position out of range — queue has %d track(s)", count)))
 	}
 	snap := state.Snapshot()
-	return b.Reply(event, fmt.Sprintf("🔁 Swapped **%s** ↔ **%s**", snap[aIdx].Info.Title, snap[cIdx].Info.Title))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🔁 Swapped **%s** ↔ **%s**", snap[aIdx].Info.Title, snap[cIdx].Info.Title)))
 }
 
 // RemoveDupes removes duplicate tracks from the queue.
 func RemoveDupes(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	removed := b.Player.Get(*event.GuildID()).RemoveDuplicates()
 	if removed == 0 {
-		return b.Reply(event, "No duplicates found")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("No duplicates found"))
 	}
-	return b.Reply(event, fmt.Sprintf("🧹 Removed %d duplicate track(s)", removed))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🧹 Removed %d duplicate track(s)", removed)))
 }
 
 // Filter applies an audio filter preset.
 func Filter(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	name := data.String("preset")
 	if err := b.Filters.SetFilter(*event.GuildID(), name); err != nil {
-		return b.Reply(event, fmt.Sprintf("❌ %v", err))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("❌ %v", err)))
 	}
 	if name == "reset" || name == "off" {
-		return b.Reply(event, "🔄 All filters cleared")
+		return b.ReplyEmbed(event, hexbot.SuccessEmbed("🔄 All filters cleared"))
 	}
 	active := b.Filters.ActiveFilters(*event.GuildID())
 	msg := "🎵 Applied **" + name + "** filter"
 	if len(active) > 0 {
 		msg += "\nActive: `" + strings.Join(active, ", ") + "`"
 	}
-	return b.Reply(event, msg)
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(msg))
 }
 
 // Forward skips forward by a time amount (default 10s).
@@ -232,18 +232,18 @@ func Forward(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	}
 	ms := ui.ParseTimeStr(durStr)
 	if ms <= 0 {
-		return b.Reply(event, fmt.Sprintf("Invalid time format `%s` — use `10`, `1:30`, or `1:00:00`", durStr))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Invalid time format `%s` — use `10`, `1:30`, or `1:00:00`", durStr)))
 	}
 
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	newPos := int64(player.Position()) + ms
 	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(newPos))); err != nil {
 		return err
 	}
-	return b.Reply(event, fmt.Sprintf("⏩ Forwarded to `%s`", ui.FormatDuration(lavalink.Duration(newPos))))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("⏩ Forwarded to `%s`", ui.FormatDuration(lavalink.Duration(newPos)))))
 }
 
 // Rewind goes backward by a time amount (default 10s).
@@ -254,12 +254,12 @@ func Rewind(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	}
 	ms := ui.ParseTimeStr(durStr)
 	if ms <= 0 {
-		return b.Reply(event, fmt.Sprintf("Invalid time format `%s` — use `10`, `1:30`, or `1:00:00`", durStr))
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Invalid time format `%s` — use `10`, `1:30`, or `1:00:00`", durStr)))
 	}
 
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	newPos := int64(player.Position()) - ms
 	if newPos < 0 {
@@ -268,17 +268,17 @@ func Rewind(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(newPos))); err != nil {
 		return err
 	}
-	return b.Reply(event, fmt.Sprintf("⏪ Rewound to `%s`", ui.FormatDuration(lavalink.Duration(newPos))))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("⏪ Rewound to `%s`", ui.FormatDuration(lavalink.Duration(newPos)))))
 }
 
 // Replay restarts the current track from the beginning.
 func Replay(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(0))); err != nil {
 		return err
 	}
-	return b.Reply(event, "🔄 Restarted from beginning")
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("🔄 Restarted from beginning"))
 }

@@ -24,7 +24,7 @@ const (
 func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	p := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if p == nil || p.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	track := *p.Track
 

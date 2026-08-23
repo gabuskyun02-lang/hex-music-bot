@@ -62,22 +62,22 @@ func Taste(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, dat
 	case "add":
 		artist := strings.TrimSpace(data.String("artist"))
 		if artist == "" {
-			return b.Reply(event, "Artist name cannot be empty")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Artist name cannot be empty"))
 		}
 		if err := b.Store.AddTasteArtist(context.Background(), userID.String(), artist); err != nil {
 			return err
 		}
-		return b.Reply(event, fmt.Sprintf("Added **%s** to your taste profile", artist))
+		return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("Added **%s** to your taste profile", artist)))
 
 	case "remove":
 		artist := strings.TrimSpace(data.String("artist"))
 		if artist == "" {
-			return b.Reply(event, "Artist name cannot be empty")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Artist name cannot be empty"))
 		}
 		if err := b.Store.RemoveTasteArtist(context.Background(), userID.String(), artist); err != nil {
 			return err
 		}
-		return b.Reply(event, fmt.Sprintf("Removed **%s** from your taste profile", artist))
+		return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("Removed **%s** from your taste profile", artist)))
 
 	case "list":
 		tastes, _ := b.Store.TasteArtists(context.Background(), userID.String())
@@ -92,7 +92,7 @@ func Taste(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, dat
 		return b.Reply(event, sb.String())
 
 	default:
-		return b.Reply(event, "Unknown action")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Unknown action"))
 	}
 }
 
@@ -115,7 +115,7 @@ func ToggleAutoplay(b *hexbot.Bot, event *events.ApplicationCommandInteractionCr
 	if newEnabled {
 		status = "enabled"
 	}
-	return b.Reply(event, fmt.Sprintf("Autoplay %s (level: `%s`). When the queue drains, I'll keep the music going.", status, level))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("Autoplay %s (level: `%s`). When the queue drains, I'll keep the music going.", status, level)))
 }
 
 // Set247 toggles 24/7 mode — bot stays connected and survives restarts.
@@ -159,7 +159,7 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 	case "create":
 		name := strings.TrimSpace(data.String("name"))
 		if name == "" {
-			return b.Reply(event, "Playlist name cannot be empty")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Playlist name cannot be empty"))
 		}
 		pl, err := b.Store.CreatePlaylist(ctx, userID.String(), name)
 		if err != nil {
@@ -183,7 +183,7 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		code := data.String("code")
 		pl, err := b.Store.GetPlaylistByCode(ctx, code)
 		if err != nil {
-			return b.Reply(event, fmt.Sprintf("Playlist not found for code `%s`", code))
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Playlist not found for code `%s`", code)))
 		}
 		var sb strings.Builder
 		fmt.Fprintf(&sb, "**%s** (%d tracks, code: `%s`):\n", pl.Name, len(pl.Tracks), pl.ShareCode)
@@ -200,10 +200,10 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		code := data.String("code")
 		pl, err := b.Store.GetPlaylistByCode(ctx, code)
 		if err != nil {
-			return b.Reply(event, "Playlist not found")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Playlist not found"))
 		}
 		if pl.OwnerID != userID.String() {
-			return b.Reply(event, "You can only delete your own playlists")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("You can only delete your own playlists"))
 		}
 		if err := b.Store.DeletePlaylist(ctx, pl.ID, pl.OwnerID); err != nil {
 			return err
@@ -214,14 +214,14 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		code := data.String("code")
 		title := strings.TrimSpace(data.String("title"))
 		if title == "" {
-			return b.Reply(event, "Track title cannot be empty")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Track title cannot be empty"))
 		}
 		pl, err := b.Store.GetPlaylistByCode(ctx, code)
 		if err != nil {
-			return b.Reply(event, "Playlist not found")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Playlist not found"))
 		}
 		if pl.OwnerID != userID.String() {
-			return b.Reply(event, "You can only add tracks to your own playlists")
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("You can only add tracks to your own playlists"))
 		}
 		if err := b.Store.AddPlaylistTrack(ctx, pl.ID, store.PlaylistTrack{Title: title}); err != nil {
 			return err
@@ -229,6 +229,6 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		return b.Reply(event, fmt.Sprintf("Added **%s** to **%s**", title, pl.Name))
 
 	default:
-		return b.Reply(event, "Unknown playlist subcommand")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Unknown playlist subcommand"))
 	}
 }
