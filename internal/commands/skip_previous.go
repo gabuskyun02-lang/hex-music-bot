@@ -6,17 +6,18 @@ import (
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+
 )
 
 // Skip drops ahead in the queue and starts what follows via the shared action.
 func Skip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	guildID := *event.GuildID()
 	if !b.IsDJ(event) {
-		return b.Reply(event, "⛔ You need the DJ role to skip tracks")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need the DJ role to skip tracks"))
 	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 
 	amount := 1
@@ -30,9 +31,9 @@ func Skip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	next, stopped := b.SkipNext(guildID)
 	b.Cards.Refresh(guildID)
 	if stopped {
-		return b.Reply(event, "Skipped — the queue is empty")
+		return b.ReplyEmbed(event, hexbot.SuccessEmbed("Skipped — the queue is empty"))
 	}
-	return b.Reply(event, "Skipped to "+ui.TrackMarkdown(*next))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("Skipped to "+ui.TrackMarkdown(*next)))
 }
 
 // Previous replays the most recently finished track via the shared action.
@@ -40,7 +41,7 @@ func Previous(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 	prev, noHistory := b.ReplayPrevious(*event.GuildID())
 	b.Cards.Refresh(*event.GuildID())
 	if noHistory {
-		return b.Reply(event, "No previous track yet")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("No previous track yet"))
 	}
-	return b.Reply(event, "Rewound to "+ui.TrackMarkdown(*prev))
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("Rewound to "+ui.TrackMarkdown(*prev)))
 }

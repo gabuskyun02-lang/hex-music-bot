@@ -11,24 +11,24 @@ import (
 func Pause(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	paused, hadPlayback := b.SetPaused(*event.GuildID(), true)
 	if !hadPlayback {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
-	if paused {
-		b.Cards.Refresh(*event.GuildID())
-		return b.Reply(event, "Paused")
+	if !paused {
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Already paused"))
 	}
-	return b.Reply(event, "Already paused")
+	b.Cards.Refresh(*event.GuildID())
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("⏸ Paused"))
 }
 
 // Resume continues a paused player via the shared action.
 func Resume(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	paused, hadPlayback := b.SetPaused(*event.GuildID(), false)
 	if !hadPlayback {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
-	if !paused {
-		return b.Reply(event, "Already playing")
+	if paused {
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Already playing"))
 	}
 	b.Cards.Refresh(*event.GuildID())
-	return b.Reply(event, "Resumed")
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("▶ Resumed"))
 }

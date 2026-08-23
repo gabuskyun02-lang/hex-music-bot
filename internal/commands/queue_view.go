@@ -19,58 +19,96 @@ func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	state := b.Player.Get(*event.GuildID())
 	tracks := state.Snapshot()
 	if len(tracks) == 0 {
-		return b.Reply(event, "The queue is empty")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("The queue is empty"))
 	}
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "**Up next** (%d tracks) — loop: `%s`\n", len(tracks), state.LoopMode())
+	fmt.Fprintf(&sb, "**Up next** (%d tracks) — loop: `%s`\n\n", len(tracks), state.LoopMode())
 	for i, track := range tracks[:min(len(tracks), queueDisplayLimit)] {
-		fmt.Fprintf(&sb, "%d. %s\n", i+1, ui.TrackMarkdown(track))
+		fmt.Fprintf(&sb, "`%d.` %s\n", i+1, ui.TrackMarkdown(track))
 	}
 	if remaining := len(tracks) - queueDisplayLimit; remaining > 0 {
-		fmt.Fprintf(&sb, "...and %d more", remaining)
+		fmt.Fprintf(&sb, "\n...and %d more", remaining)
 	}
-	return b.Reply(event, sb.String())
+
+	return b.ReplyEmbed(event, discord.Embed{
+		Title:       "📋 Queue",
+		Description: sb.String(),
+		Color:       0x5865F2,
+	})
 }
 
-// NowPlaying reports the current track with position and length.
+// NowPlaying reports the current track with position and length as an embed.
 func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
-		return b.Reply(event, "Nothing is playing")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
 	track := *player.Track
-	status := "playing"
+	status := "▶ Now Playing"
 	if player.Paused {
-		status = "paused"
+		status = "⏸ Paused"
 	}
-	return b.Reply(event, fmt.Sprintf("%s %s\n`%s / %s`",
-		status,
-		ui.TrackMarkdown(track),
-		ui.FormatDuration(player.Position()),
-		ui.FormatDuration(track.Info.Length),
-	))
+
+	pos, total := player.Position(), track.Info.Length
+	const cells = 15
+	filled := 0
+	if total > 0 {
+		filled = int(float64(pos) / float64(total) * cells)
+	}
+	filled = min(filled, cells)
+	bar := strings.Repeat("▬", filled)
+	if filled < cells {
+		bar += "🔘" + strings.Repeat("─", cells-filled-1)
+	} else {
+		bar += "🔘"
+	}
+	progress := fmt.Sprintf("`%s` %s `%s`", ui.FormatDuration(pos), bar, ui.FormatDuration(total))
+
+	inlineTrue := true
+	embed := discord.Embed{
+		Title:       status,
+			Description: fmt.Sprintf("**%s**\n%s", ui.TrackMarkdown(track), track.Info.Author),
+		Color:       0x5865F2,
+		Fields: []discord.EmbedField{
+			{Name: "Progress", Value: progress},
+			{Name: "Volume", Value: fmt.Sprintf("`%d`", player.Volume), Inline: &inlineTrue},
+			{Name: "Loop", Value: "`" + b.Player.Get(*event.GuildID()).LoopMode().String() + "`", Inline: &inlineTrue},
+			{Name: "Queue", Value: fmt.Sprintf("`%d` tracks", b.Player.Get(*event.GuildID()).Len()), Inline: &inlineTrue},
+		},
+	}
+	if track.Info.ArtworkURL != nil && *track.Info.ArtworkURL != "" {
+		embed.Thumbnail = &discord.EmbedResource{URL: *track.Info.ArtworkURL}
+	}
+
+	return b.ReplyEmbed(event, embed)
 }
 
 // Shuffle randomizes the queue order via the shared action.
 func Shuffle(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	if !b.IsDJ(event) {
-		return b.Reply(event, "⛔ You need the DJ role to shuffle")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need the DJ role to shuffle"))
 	}
-	return b.Reply(event, "Queue shuffled")
+	b.ShuffleQueue(*event.GuildID())
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("Queue shuffled 🔀"))
 }
 
 // Loop switches the guild's loop mode via the shared action.
 func Loop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	if !b.IsDJ(event) {
-		return b.Reply(event, "⛔ You need the DJ role to change loop mode")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need the DJ role to change loop mode"))
 	}
 	mode, ok := player.ParseLoopMode(data.String("mode"))
 	if !ok {
-		return b.Reply(event, "Unknown loop mode")
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Unknown loop mode"))
 	}
 	b.Player.Get(*event.GuildID()).SetLoopMode(mode)
 	b.Cards.Refresh(*event.GuildID())
-	return b.Reply(event, "Loop set to `"+mode.String()+"`")
-}
 
+	label := map[player.LoopMode]string{
+		player.LoopOff:   "🔁 Off",
+		player.LoopTrack: "🔂 Track",
+		player.LoopQueue: "🔁 Queue",
+	}[mode]
+	return b.ReplyEmbed(event, hexbot.SuccessEmbed("Loop set to **"+label+"**"))
+}
