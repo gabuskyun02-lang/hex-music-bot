@@ -73,19 +73,7 @@ func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate
 	status = badge.Emoji + " " + status
 
 	pos, total := player.Position(), track.Info.Length
-	const cells = 15
-	filled := 0
-	if total > 0 {
-		filled = int(float64(pos) / float64(total) * cells)
-	}
-	filled = min(filled, cells)
-	bar := strings.Repeat("▬", filled)
-	if filled < cells {
-		bar += "🔘" + strings.Repeat("─", cells-filled-1)
-	} else {
-		bar += "🔘"
-	}
-	progress := fmt.Sprintf("`%s` %s `%s`", ui.FormatDuration(pos), bar, ui.FormatDuration(total))
+	progress := ui.ProgressBar(pos, total, 18)
 
 	inlineTrue := true
 	embed := discord.Embed{

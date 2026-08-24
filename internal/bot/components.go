@@ -36,7 +36,12 @@ func (b *Bot) OnComponentInteraction(event *events.ComponentInteractionCreate) {
 	}
 	_ = event.DeferUpdateMessage()
 
-	switch strings.TrimPrefix(customID, "hex:") {
+	action := strings.TrimPrefix(customID, "hex:")
+	if _, denied := b.checkCooldown(event.User().ID, "btn:"+action); denied {
+		return // ack already sent; deny silently
+	}
+
+	switch action {
 	case "prev":
 		b.ReplayPrevious(*guildID)
 	case "toggle":

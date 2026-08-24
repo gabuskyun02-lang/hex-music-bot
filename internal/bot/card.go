@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -171,7 +170,7 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 	track := *p.Track
 	badge := ui.SourceBadgeFor(track.Info.SourceName)
 	sourceName := formatSourceName(track.Info.SourceName)
-	status := "▶ Now playing"
+	status := "▶ Now Playing"
 	if p.Paused {
 		status = "⏸ Paused"
 	}
@@ -193,20 +192,7 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 	// Progress bar
 	progress := "🔴 LIVE"
 	if !track.Info.IsStream {
-		pos, total := p.Position(), track.Info.Length
-		const cells = 18
-		filled := 0
-		if total > 0 {
-			filled = int(float64(pos) / float64(total) * cells)
-		}
-		filled = clampInt(filled, 0, cells)
-		bar := strings.Repeat("▬", filled)
-		if filled < cells {
-			bar += "🔘" + strings.Repeat("─", cells-filled-1)
-		} else {
-			bar += "🔘"
-		}
-		progress = fmt.Sprintf("`%s` %s `%s`", ui.FormatDuration(pos), bar, ui.FormatDuration(total))
+		progress = ui.ProgressBar(p.Position(), track.Info.Length, 18)
 	}
 
 	upNext := "Queue empty — add more with /play"

@@ -43,18 +43,23 @@ var filterPresets = map[string]func() *lavalink.Filters{
 	},
 }
 
+type guildFilters struct {
+	composite lavalink.Filters
+	// owners maps each filter field to the preset name that set it.
+	// A missing entry means no active preset owns that field.
+	owners map[string]string
+}
+
 type filterManager struct {
-	mu      sync.Mutex
-	b       *Bot
-	filters map[snowflake.ID]*lavalink.Filters
-	names   map[snowflake.ID][]string
+	mu     sync.Mutex
+	b      *Bot
+	states map[snowflake.ID]*guildFilters
 }
 
 func newFilterManager(b *Bot) *filterManager {
 	return &filterManager{
-		b:       b,
-		filters: make(map[snowflake.ID]*lavalink.Filters),
-		names:   make(map[snowflake.ID][]string),
+		b:      b,
+		states: make(map[snowflake.ID]*guildFilters),
 	}
 }
 
@@ -71,8 +76,7 @@ func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
 	switch name {
 	case "reset", "off":
 		fm.mu.Lock()
-		delete(fm.filters, guildID)
-		delete(fm.names, guildID)
+		delete(fm.states, guildID)
 		fm.mu.Unlock()
 		return p.Update(context.TODO(), disgolink.WithFilters(filters))
 	case "clear":
@@ -85,25 +89,20 @@ func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
 	}
 
 	preset := fn()
-	filters = *preset
 
 	fm.mu.Lock()
-	existing := fm.filters[guildID]
-	if existing != nil {
-		filters.Volume = existing.Volume
+	state := fm.states[guildID]
+	if state == nil {
+		state = &guildFilters{owners: make(map[string]string)}
+		fm.states[guildID] = state
 	}
-	fm.filters[guildID] = &filters
-	names := fm.names[guildID]
-	found := false
-	for _, n := range names {
-		if n == name {
-			found = true
-			break
-		}
+	for _, old := range mergePreset(&state.composite, name, preset, state.owners) {
+		slog.Debug("filter evicted",
+			slog.String("guild", guildID.String()),
+			slog.String("filter", old),
+		)
 	}
-	if !found {
-		fm.names[guildID] = append(names, name)
-	}
+	filters = state.composite
 	fm.mu.Unlock()
 
 	if err := p.Update(context.TODO(), disgolink.WithFilters(filters)); err != nil {
@@ -117,9 +116,75 @@ func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
 	return nil
 }
 
-// ActiveFilters returns the list of currently applied filter names for a guild.
+// mergePreset copies each non-nil preset field into the guild's composite,
+// recording `name` as its owner. A field already owned by another preset is
+// overwritten (latest wins) and the loser's name is returned for eviction.
+func mergePreset(composite *lavalink.Filters, name string, preset *lavalink.Filters, owners map[string]string) (evicted []string) {
+	evict := func(field string) {
+		if prev, ok := owners[field]; ok && prev != name {
+			evicted = append(evicted, prev)
+		}
+		owners[field] = name
+	}
+	if preset.Volume != nil {
+		evict("volume")
+		composite.Volume = preset.Volume
+	}
+	if preset.Equalizer != nil {
+		evict("equalizer")
+		composite.Equalizer = preset.Equalizer
+	}
+	if preset.Timescale != nil {
+		evict("timescale")
+		composite.Timescale = preset.Timescale
+	}
+	if preset.Tremolo != nil {
+		evict("tremolo")
+		composite.Tremolo = preset.Tremolo
+	}
+	if preset.Vibrato != nil {
+		evict("vibrato")
+		composite.Vibrato = preset.Vibrato
+	}
+	if preset.Rotation != nil {
+		evict("rotation")
+		composite.Rotation = preset.Rotation
+	}
+	if preset.Karaoke != nil {
+		evict("karaoke")
+		composite.Karaoke = preset.Karaoke
+	}
+	if preset.LowPass != nil {
+		evict("lowpass")
+		composite.LowPass = preset.LowPass
+	}
+	return evicted
+}
+
+// ActiveFilters returns the names of presets that still own at least one
+// filter field for a guild, in application order.
 func (fm *filterManager) ActiveFilters(guildID snowflake.ID) []string {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
-	return fm.names[guildID]
+	state := fm.states[guildID]
+	if state == nil {
+		return nil
+	}
+	var active []string
+	seen := make(map[string]bool)
+	for _, field := range filterFields {
+		owner, ok := state.owners[field]
+		if !ok || seen[owner] {
+			continue
+		}
+		seen[owner] = true
+		active = append(active, owner)
+	}
+	return active
+}
+
+// filterFields lists every Lavalink filter field mergePreset tracks.
+var filterFields = []string{
+	"volume", "equalizer", "timescale", "tremolo", "vibrato",
+	"rotation", "karaoke", "lowpass",
 }

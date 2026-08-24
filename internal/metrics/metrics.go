@@ -41,6 +41,7 @@ func New() *Metrics {
 	m.counter("hex_music_bot_card_edits", "Player card REST edits sent")
 	m.counter("hex_music_bot_commands_total", "Slash commands executed")
 	m.counter("hex_music_bot_autoplay_enqueued", "Tracks enqueued by autoplay")
+	m.counter("hex_music_bot_cooldown_denies", "Commands and buttons blocked by cooldown")
 	return m
 }
 

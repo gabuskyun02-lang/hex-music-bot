@@ -22,15 +22,16 @@ type CommandHandler func(event *events.ApplicationCommandInteractionCreate, data
 
 // Bot is the shared dependency container for all handlers.
 type Bot struct {
-	Cfg      *config.Config
-	Store    *store.Store
-	Client   *disgobot.Client
-	Lavalink *disgolink.Client
-	Player   *player.Manager
-	Cards    *CardManager
-	Lyrics   *LyricsCache
-	Metrics  *metrics.Metrics
-	Filters  *filterManager
+	Cfg       *config.Config
+	Store     *store.Store
+	Client    *disgobot.Client
+	Lavalink  *disgolink.Client
+	Player    *player.Manager
+	Cards     *CardManager
+	Lyrics    *LyricsCache
+	Metrics   *metrics.Metrics
+	Cooldowns *CooldownGate
+	Filters   *filterManager
 	// restDead tracks nodes whose REST API failed (WAF block, proxy death);
 	// BestNode skips them so playback never lands on a WS-alive/REST-dead node.
 	restDead sync.Map
@@ -51,6 +52,7 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 		Handlers: make(map[string]CommandHandler),
 	}
 	b.Filters = newFilterManager(b)
+	b.Cooldowns = NewCooldownGate()
 	b.voice = NewVoiceWatch(b)
 	b.Votes = NewVoteManager()
 	return b

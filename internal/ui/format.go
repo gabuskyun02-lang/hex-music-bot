@@ -56,6 +56,23 @@ func SourceBadgeFor(sourceName string) SourceBadge {
 	return defaultBadge
 }
 
+// ProgressBar renders a "`m:ss` ▬…🔘───… `m:ss`" progress line at the
+// requested cell width.
+func ProgressBar(pos, total lavalink.Duration, cells int) string {
+	filled := 0
+	if total > 0 {
+		filled = int(float64(pos) / float64(total) * float64(cells))
+	}
+	filled = min(filled, cells)
+	bar := strings.Repeat("▬", filled)
+	if filled < cells {
+		bar += "🔘" + strings.Repeat("─", cells-filled-1)
+	} else {
+		bar += "🔘"
+	}
+	return fmt.Sprintf("`%s` %s `%s`", FormatDuration(pos), bar, FormatDuration(total))
+}
+
 // ParseTimeStr accepts "HH:MM:SS", "MM:SS", or "SS" and returns milliseconds.
 // Returns 0 on parse failure.
 func ParseTimeStr(s string) int64 {
