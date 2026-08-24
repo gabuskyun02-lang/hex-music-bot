@@ -17,6 +17,7 @@ type Metrics struct {
 	mu        sync.Mutex
 	startTime time.Time
 	counters  map[string]*counter
+	mux       *http.ServeMux
 }
 
 type counter struct {
@@ -31,6 +32,7 @@ func New() *Metrics {
 	m := &Metrics{
 		startTime: time.Now(),
 		counters:  make(map[string]*counter),
+		mux:       http.NewServeMux(),
 	}
 	m.counter("hex_music_bot_tracks_played", "Total tracks started")
 	m.counter("hex_music_bot_tracks_ended", "Total tracks finished naturally")
@@ -44,6 +46,12 @@ func New() *Metrics {
 	m.counter("hex_music_bot_autoplay_enqueued", "Tracks enqueued by autoplay")
 	m.counter("hex_music_bot_cooldown_denies", "Commands and buttons blocked by cooldown")
 	return m
+}
+
+// HandleFunc registers a handler on the metrics server's mux, so auxiliary
+// endpoints (e.g. the status API) share one listener.
+func (m *Metrics) HandleFunc(pattern string, handler http.HandlerFunc) {
+	m.mux.HandleFunc(pattern, handler)
 }
 
 func (m *Metrics) counter(name, help string) {
@@ -97,15 +105,14 @@ func (m *Metrics) Handler() http.HandlerFunc {
 // StartServer starts the metrics HTTP server on the given address in a
 // goroutine. Returns immediately.
 func (m *Metrics) StartServer(addr string) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/metrics", m.Handler())
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	m.mux.HandleFunc("/metrics", m.Handler())
+	m.mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
 	go func() {
 		slog.Info("metrics server listening", slog.String("addr", addr))
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		if err := http.ListenAndServe(addr, m.mux); err != nil {
 			slog.Error("metrics server failed", slog.Any("err", err))
 		}
 	}()

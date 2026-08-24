@@ -19,9 +19,10 @@ const (
 	lyricsFetchTime = 10 * time.Second
 )
 
-// Lyrics resolves LRCLIB lyrics for the current track and replies with a
-// paginated session (◀ ▶ buttons). Synced lyrics keep [mm:ss] timestamps.
-func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
+// Lyrics resolves LRCLIB lyrics for the current track. Default is a
+// paginated static session (◀ ▶ buttons); mode=live posts a window that
+// scrolls with playback when synced lyrics exist.
+func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	p := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if p == nil || p.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
@@ -45,6 +46,17 @@ func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ 
 	}
 	if res == nil {
 		return b.EditReply(event, fmt.Sprintf("No lyrics found for `%s`", track.Info.Title))
+	}
+
+	if mode, _ := data.OptString("mode"); mode == "live" && len(res.Synced) > 0 {
+		if err := b.StartLiveLyrics(*event.GuildID(), event.Channel().ID(), track.Info.Title, res.Synced); err != nil {
+			return b.EditReply(event, fmt.Sprintf("Live lyrics failed: `%v`", err))
+		}
+		return b.EditReply(event, fmt.Sprintf("Live: **%s — %s** ↑", res.Artist, res.Title))
+	}
+	fallbackNote := ""
+	if mode, _ := data.OptString("mode"); mode == "live" {
+		fallbackNote = "Live sync unavailable — showing static lyrics.\n"
 	}
 
 	pages := buildLyricPages(res, track.Info.Title)
@@ -77,7 +89,7 @@ func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ 
 	}
 	// The interaction itself stays as an ephemeral "thinking" ack; the real
 	// message above is the persistent paginated one.
-	return b.EditReply(event, fmt.Sprintf("Lyrics: **%s — %s** ↑", res.Artist, res.Title))
+	return b.EditReply(event, fallbackNote+fmt.Sprintf("Lyrics: **%s — %s** ↑", res.Artist, res.Title))
 }
 
 // buildLyricPages chunks lyrics text into rune-safe pages.

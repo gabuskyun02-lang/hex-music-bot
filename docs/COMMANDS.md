@@ -21,7 +21,7 @@ Auto-generated from `internal/commands/defs.go`. Do not edit manually.
 | `/seek` | Seek to a position in the current song |
 | `/remove` | Remove one queued song by its position |
 | `/search` | Search for a song and pick the right one (live autocomplete) |
-| `/lyrics` | Show synced lyrics for the current song (LRCLIB) |
+| `/lyrics` | Show synced lyrics for the current song (LRCLIB); `mode: live` posts a scrolling window synced to playback |
 | `/history` | Show recently played tracks |
 | `/taste` | Manage your taste profile for autoplay |
 | `/playlist` | Manage playlists |

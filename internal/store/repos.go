@@ -19,7 +19,7 @@ import (
 type GuildSettings struct {
 	GuildID          string
 	DefaultVolume    int
-	Locale           string
+	Locale           string // ponytail: column retained — wire when i18n string packs exist.
 	RequestChannelID string
 	Mode247          bool
 	Autoplay         bool
@@ -87,14 +87,6 @@ func (s *Store) SetGuildDJRole(ctx context.Context, guildID, roleID string) erro
 		`INSERT INTO guild_settings (guild_id, dj_role_id) VALUES (?, ?)
 		 ON CONFLICT(guild_id) DO UPDATE SET dj_role_id = ?, updated_at = datetime('now')`,
 		guildID, roleID, roleID)
-	return err
-}
-
-func (s *Store) SetGuildLanguage(ctx context.Context, guildID, lang string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO guild_settings (guild_id, locale) VALUES (?, ?)
-		 ON CONFLICT(guild_id) DO UPDATE SET locale = ?, updated_at = datetime('now')`,
-		guildID, lang, lang)
 	return err
 }
 

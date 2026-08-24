@@ -32,9 +32,6 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
 	m := metrics.New()
-	if cfg.MetricsAddr != "" {
-		m.StartServer(cfg.MetricsAddr)
-	}
 
 	slog.Info("starting hex-music-bot",
 		slog.String("nodes", fmt.Sprintf("%d configured", len(cfg.Nodes))),
@@ -51,6 +48,10 @@ func main() {
 	b := bot.New(cfg, st)
 	b.Metrics = m
 	b.Handlers = commands.All(b)
+	m.HandleFunc("/api/v1/status", b.StatusHandler())
+	if cfg.MetricsAddr != "" {
+		m.StartServer(cfg.MetricsAddr)
+	}
 
 	client, err := disgo.New(cfg.Token,
 		disgobot.WithGatewayConfigOpts(

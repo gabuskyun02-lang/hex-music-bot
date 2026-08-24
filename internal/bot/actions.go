@@ -68,6 +68,7 @@ func (b *Bot) SkipNext(guildID snowflake.ID) (*lavalink.Track, bool) {
 // onQueueDrained finalizes the card, arms the idle disconnect timer, and
 // attempts autoplay. Shared drain path for SkipNext and OnTrackEnd.
 func (b *Bot) onQueueDrained(guildID snowflake.ID) {
+	b.Sync.Stop(guildID)
 	b.Cards.Finalize(guildID, "queue ended")
 	b.voice.ScheduleIdleDisconnect(guildID)
 	b.TryAutoplay(guildID)
@@ -110,6 +111,7 @@ func (b *Bot) ShuffleQueue(guildID snowflake.ID) {
 
 // Halt stops playback, clears the queue, and locks the card.
 func (b *Bot) Halt(guildID snowflake.ID) {
+	b.Sync.Stop(guildID)
 	b.Player.Get(guildID).ClearQueue()
 	if p := b.Lavalink.ExistingPlayer(guildID); p != nil {
 		if err := p.Update(context.TODO(), disgolink.WithNullTrack()); err != nil {
@@ -121,6 +123,7 @@ func (b *Bot) Halt(guildID snowflake.ID) {
 
 // ForgetGuild releases all per-guild bookkeeping when the bot leaves voice.
 func (b *Bot) ForgetGuild(guildID snowflake.ID) {
+	b.Sync.Stop(guildID)
 	b.Votes.Cancel(guildID, "skip")
 	b.failover.Clear(guildID)
 }

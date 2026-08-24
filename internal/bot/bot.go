@@ -29,6 +29,7 @@ type Bot struct {
 	Player    *player.Manager
 	Cards     *CardManager
 	Lyrics    *LyricsCache
+	Sync      *LyricSyncManager
 	Pagers    *PagerManager
 	Metrics   *metrics.Metrics
 	Cooldowns *CooldownGate
@@ -53,9 +54,8 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 		Handlers: make(map[string]CommandHandler),
 	}
 	b.Filters = newFilterManager(b)
-	b.Cooldowns = NewCooldownGate()
-	b.voice = NewVoiceWatch(b)
 	b.Votes = NewVoteManager()
 	b.Pagers = NewPagerManager()
+	b.Sync = NewLyricSyncManager(b)
 	return b
 }

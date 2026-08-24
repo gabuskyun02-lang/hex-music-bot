@@ -178,6 +178,7 @@ func (m *CardManager) Refresh(guildID snowflake.ID) {
 
 func (m *CardManager) Finalize(guildID snowflake.ID, reason string) {
 	entry, ok := m.removeAndWait(guildID)
+	m.b.Sync.Stop(guildID)
 	if !ok || entry.messageID == 0 { // zero = creation in progress
 		return
 	}
@@ -270,12 +271,6 @@ func (b *Bot) renderCardBodyState(guildID snowflake.ID) cardBody {
 	section := discord.SectionComponent{
 		Components: []discord.SectionSubComponent{header},
 	}
-	if track.Info.ArtworkURL != nil && *track.Info.ArtworkURL != "" {
-		section.Accessory = discord.ThumbnailComponent{
-			Media:       discord.UnfurledMediaItem{URL: *track.Info.ArtworkURL},
-			Description: track.Info.Title,
-		}
-	}
 	progress := "🔴 LIVE"
 	if !track.Info.IsStream {
 		progress = ui.ProgressBar(p.Position(), track.Info.Length, 18)
@@ -299,6 +294,16 @@ func (b *Bot) renderCardBodyState(guildID snowflake.ID) cardBody {
 	container.Components = append(container.Components,
 		section,
 		discord.SeparatorComponent{},
+	)
+	if track.Info.ArtworkURL != nil && *track.Info.ArtworkURL != "" {
+		container.Components = append(container.Components,
+			discord.NewMediaGallery(discord.MediaGalleryItem{
+				Media:       discord.UnfurledMediaItem{URL: *track.Info.ArtworkURL},
+				Description: track.Info.Title,
+			}),
+		)
+	}
+	container.Components = append(container.Components,
 		footer,
 		discord.SeparatorComponent{},
 	)

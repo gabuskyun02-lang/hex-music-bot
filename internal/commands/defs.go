@@ -172,6 +172,17 @@ var commandDefs = []discord.ApplicationCommandCreate{
 	discord.SlashCommandCreate{
 		Name:        "lyrics",
 		Description: "Show synced lyrics for the current song",
+		Options: []discord.ApplicationCommandOption{
+			discord.ApplicationCommandOptionString{
+				Name:        "mode",
+				Description: "static pages or a live scrolling window synced to playback",
+				Required:    false,
+				Choices: []discord.ApplicationCommandOptionChoiceString{
+					{Name: "static", Value: "static"},
+					{Name: "live", Value: "live"},
+				},
+			},
+		},
 	},
 	discord.SlashCommandCreate{
 		Name:        "history",

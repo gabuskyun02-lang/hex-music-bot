@@ -22,6 +22,10 @@ func (b *Bot) OnComponentInteraction(event *events.ComponentInteractionCreate) {
 		return
 	}
 
+	if strings.HasPrefix(customID, "hexsync:") {
+		b.handleSyncStopButton(event, customID)
+		return
+	}
 	if strings.HasPrefix(customID, "hexlyr:") {
 		b.handleLyricsButton(event, customID)
 		return
