@@ -88,7 +88,6 @@ func main() {
 
 	b.Cards = bot.NewCardManager(b)
 	b.Lyrics = bot.NewLyricsCache()
-	b.Pagers = bot.NewPagerManager()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -143,6 +142,7 @@ func main() {
 	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-s
 	slog.Info("shutting down")
+	b.Cooldowns.Stop()
 	for p := range b.Lavalink.Players() {
 		b.SaveSnapshot(p.GuildID)
 	}

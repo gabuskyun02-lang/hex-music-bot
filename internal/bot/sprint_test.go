@@ -87,3 +87,15 @@ func TestActiveFiltersLifecycle(t *testing.T) {
 		t.Fatalf("reset must clear actives, got %v", got)
 	}
 }
+
+func TestCooldownGateStop(t *testing.T) {
+	g := NewCooldownGate()
+	// Janitor is running — Stop must shut it down without panic.
+	g.Stop()
+	// Double-stop must be safe.
+	g.Stop()
+	// Allow still works after stop (gate itself is still usable, just no janitor).
+	if ok, _ := g.Allow(snowflake.ID(1), "play"); !ok {
+		t.Fatal("Allow must still work after Stop")
+	}
+}

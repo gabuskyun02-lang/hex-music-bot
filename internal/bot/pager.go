@@ -62,14 +62,6 @@ func (m *PagerManager) Put(s *PagerSession) {
 	}
 }
 
-// Get returns the session for a session ID.
-func (m *PagerManager) Get(sessionID string) (*PagerSession, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	s, ok := m.sessions[sessionID]
-	return s, ok
-}
-
 // Move changes the session's page by delta, clamped to the valid range.
 // Returns false when the session is unknown or past its expiry.
 func (m *PagerManager) Move(sessionID string, delta int) (*PagerSession, bool) {

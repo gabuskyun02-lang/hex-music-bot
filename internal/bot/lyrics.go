@@ -78,23 +78,6 @@ func (c *LyricsCache) Advance(sessionID string, delta int) (*LyricDoc, bool) {
 	return doc, true
 }
 
-// LyricEmbed builds the clean lyrics embed for a doc's current page,
-// beatra-style: 🎤 title, artist credit, page footer.
-func LyricEmbed(doc *LyricDoc) discord.Embed {
-	embed := discord.Embed{
-		Title:       "🎤 " + doc.Title,
-		Description: doc.Pages[doc.Page],
-		Color:       doc.Color,
-		Footer: &discord.EmbedFooter{
-			Text: fmt.Sprintf("by %s · Page %d/%d", doc.Artist, doc.Page+1, len(doc.Pages)),
-		},
-	}
-	if doc.SourceURL != "" {
-		embed.URL = doc.SourceURL
-	}
-	return embed
-}
-
 // LyricContainer renders a doc's current page as a V2 container:
 // 🎤 title header, artist/source credit, page body, page footer.
 func LyricContainer(doc *LyricDoc) []discord.LayoutComponent {

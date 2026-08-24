@@ -117,6 +117,7 @@ func (m *CardManager) Create(guildID, channelID snowflake.ID) {
 func (m *CardManager) pump(ctx context.Context, guildID snowflake.ID, entry *cardEntry) {
 	defer close(entry.done)
 	t := time.NewTicker(cardTickInterval)
+	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():

@@ -35,6 +35,7 @@ type CooldownGate struct {
 	mu     sync.Mutex
 	limits map[string]time.Duration
 	last   map[string]time.Time
+	done   chan struct{}
 }
 
 // NewCooldownGate builds a gate and starts its janitor goroutine.
@@ -42,6 +43,7 @@ func NewCooldownGate() *CooldownGate {
 	g := &CooldownGate{
 		limits: cooldownLimits,
 		last:   make(map[string]time.Time),
+		done:   make(chan struct{}),
 	}
 	go g.janitor()
 	return g
@@ -68,10 +70,25 @@ func (g *CooldownGate) Allow(userID snowflake.ID, command string) (bool, time.Du
 	return true, 0
 }
 
+// Stop shuts down the janitor goroutine. Safe to call multiple times.
+func (g *CooldownGate) Stop() {
+	select {
+	case <-g.done:
+	default:
+		close(g.done)
+	}
+}
+
 // janitor periodically evicts entries older than the longest cooldown.
 func (g *CooldownGate) janitor() {
 	ticker := time.NewTicker(time.Minute)
-	for range ticker.C {
+	defer ticker.Stop()
+	for {
+		select {
+		case <-g.done:
+			return
+		case <-ticker.C:
+		}
 		cutoff := time.Now().Add(-cooldownMaxLimit)
 		g.mu.Lock()
 		for key, last := range g.last {

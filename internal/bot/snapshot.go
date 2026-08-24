@@ -219,7 +219,6 @@ func (b *Bot) restoreQueue(node *disgolink.Node, guildID snowflake.ID, queue []s
 		state.ClearQueue()
 		for _, id := range queue {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			defer cancel()
 			node.Rest.LoadTracksHandler(ctx, id, disgolink.NewTrackLoadingResultHandler(
 				func(t lavalink.Track) { state.Enqueue(t) },
 				func(p lavalink.Playlist) {
@@ -235,6 +234,7 @@ func (b *Bot) restoreQueue(node *disgolink.Node, guildID snowflake.ID, queue []s
 				func() {},
 				func(err error) {},
 			))
+			cancel()
 		}
 	}
 }
