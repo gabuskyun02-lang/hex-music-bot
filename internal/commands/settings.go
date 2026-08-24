@@ -10,7 +10,9 @@ import (
 	hexbot "hex-music-bot/internal/bot"
 )
 
-// SettingsView shows all guild settings in one embed.
+// SettingsView shows all guild settings in a two-section V2 container:
+// General (DJ role, request channel, auto-pause) split from Playback
+// (volume, 24/7, autoplay, duplicates) by separators — Zeta-style framing.
 func SettingsView(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	guildID := event.GuildID().String()
 	settings, err := b.Store.GetGuildSettings(context.Background(), guildID)
@@ -38,25 +40,29 @@ func SettingsView(b *hexbot.Bot, event *events.ApplicationCommandInteractionCrea
 	if !settings.AllowDuplicate {
 		dupes = "blocked"
 	}
-	locale := settings.Locale
-	if locale == "" {
-		locale = "en"
-	}
 
-	return b.Reply(event, fmt.Sprintf(
-		"**⚙️ Guild Settings**\n\n"+
-			"**Language:** `%s`\n"+
-			"**Default Volume:** `%d`\n"+
-			"**DJ Role:** %s\n"+
-			"**Auto-Pause:** `%s`\n"+
-			"**24/7 Mode:** `%s`\n"+
-			"**Autoplay:** `%s`\n"+
-			"**Duplicate Tracks:** `%s`\n"+
-			"**Request Channel:** %s",
-		locale, settings.DefaultVolume, djRole,
-		autoPause, mode247, autoplay, dupes,
-		requestChannelDisplay(settings.RequestChannelID),
-	))
+	container := discord.ContainerComponent{AccentColor: 0x5865F2}
+	container.Components = append(container.Components,
+		discord.TextDisplayComponent{Content: "### ⚙️ Guild Settings"},
+		discord.SeparatorComponent{},
+		discord.TextDisplayComponent{Content: fmt.Sprintf(
+			"**General**\n"+
+				"**DJ Role:** %s\n"+
+				"**Request Channel:** %s\n"+
+				"**Auto-Pause:** `%s`",
+			djRole, requestChannelDisplay(settings.RequestChannelID), autoPause,
+		)},
+		discord.SeparatorComponent{},
+		discord.TextDisplayComponent{Content: fmt.Sprintf(
+			"**Playback**\n"+
+				"**Default Volume:** `%d`\n"+
+				"**24/7 Mode:** `%s`\n"+
+				"**Autoplay:** `%s`\n"+
+				"**Duplicate Tracks:** `%s`",
+			settings.DefaultVolume, mode247, autoplay, dupes,
+		)},
+	)
+	return b.ReplyV2(event, []discord.LayoutComponent{container}, false)
 }
 
 func requestChannelDisplay(id string) string {

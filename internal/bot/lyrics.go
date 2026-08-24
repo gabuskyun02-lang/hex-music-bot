@@ -95,6 +95,35 @@ func LyricEmbed(doc *LyricDoc) discord.Embed {
 	return embed
 }
 
+// LyricContainer renders a doc's current page as a V2 container:
+// 🎤 title header, artist/source credit, page body, page footer.
+func LyricContainer(doc *LyricDoc) []discord.LayoutComponent {
+	c := discord.ContainerComponent{AccentColor: doc.Color}
+	c.Components = append(c.Components,
+		discord.TextDisplayComponent{Content: "### 🎤 " + doc.Title},
+	)
+	if doc.SourceURL != "" {
+		c.Components = append(c.Components,
+			discord.TextDisplayComponent{
+				Content: fmt.Sprintf("%s · [source](<%s>)", doc.Artist, doc.SourceURL),
+			},
+		)
+	} else {
+		c.Components = append(c.Components,
+			discord.TextDisplayComponent{Content: doc.Artist},
+		)
+	}
+	c.Components = append(c.Components,
+		discord.SeparatorComponent{},
+		discord.TextDisplayComponent{Content: doc.Pages[doc.Page]},
+		discord.SeparatorComponent{},
+		discord.TextDisplayComponent{
+			Content: fmt.Sprintf("Page %d/%d", doc.Page+1, len(doc.Pages)),
+		},
+	)
+	return []discord.LayoutComponent{c}
+}
+
 // LyricButtons builds the pager row for a doc state.
 func LyricButtons(doc *LyricDoc) discord.LayoutComponent {
 	prev := discord.NewSecondaryButton("◀", "hexlyr:p:"+doc.SessionID)
@@ -125,10 +154,6 @@ func (b *Bot) handleLyricsButton(event *events.ComponentInteractionCreate, custo
 		})
 		return
 	}
-	components := []discord.LayoutComponent{LyricButtons(doc)}
-	_ = event.UpdateMessage(discord.MessageUpdate{
-		Content:    omit.Ptr(""),
-		Embeds:     &[]discord.Embed{LyricEmbed(doc)},
-		Components: &components,
-	})
+	components := append(LyricContainer(doc), LyricButtons(doc))
+	_ = event.UpdateMessage(discord.NewMessageUpdateV2(components))
 }

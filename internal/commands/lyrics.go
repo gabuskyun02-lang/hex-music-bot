@@ -67,9 +67,9 @@ func Lyrics(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ 
 	}
 	b.Lyrics.Put(doc)
 
-	components := []discord.LayoutComponent{hexbot.LyricButtons(doc)}
+	components := append(hexbot.LyricContainer(doc), hexbot.LyricButtons(doc))
 	_, err = b.Client.Rest.CreateMessage(event.Channel().ID(), discord.MessageCreate{
-		Embeds:     []discord.Embed{hexbot.LyricEmbed(doc)},
+		Flags:      discord.MessageFlagIsComponentsV2,
 		Components: components,
 	})
 	if err != nil {

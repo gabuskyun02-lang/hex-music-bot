@@ -87,6 +87,7 @@ func main() {
 
 	b.Cards = bot.NewCardManager(b)
 	b.Lyrics = bot.NewLyricsCache()
+	b.Pagers = bot.NewPagerManager()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

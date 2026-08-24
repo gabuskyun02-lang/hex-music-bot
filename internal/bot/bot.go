@@ -29,6 +29,7 @@ type Bot struct {
 	Player    *player.Manager
 	Cards     *CardManager
 	Lyrics    *LyricsCache
+	Pagers    *PagerManager
 	Metrics   *metrics.Metrics
 	Cooldowns *CooldownGate
 	Filters   *filterManager
@@ -55,5 +56,6 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 	b.Cooldowns = NewCooldownGate()
 	b.voice = NewVoiceWatch(b)
 	b.Votes = NewVoteManager()
+	b.Pagers = NewPagerManager()
 	return b
 }
