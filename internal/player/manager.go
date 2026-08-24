@@ -55,6 +55,7 @@ type State struct {
 	queue            []lavalink.Track
 	history          []lavalink.Track // finished tracks, most recent last
 	loop             LoopMode
+	shuffled         bool                    // queue order is no longer enqueue-order
 	requesters       map[string]snowflake.ID // track identifier -> requester user ID
 	currentRequester snowflake.ID            // who requested the currently playing track
 }
@@ -106,12 +107,22 @@ func (s *State) Drop(n int) {
 	}
 	s.queue = s.queue[n:]
 }
+
+// Shuffle randomizes the queue in place and marks the state shuffled.
 func (s *State) Shuffle() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rand.Shuffle(len(s.queue), func(i, j int) {
 		s.queue[i], s.queue[j] = s.queue[j], s.queue[i]
 	})
+	s.shuffled = true
+}
+
+// Shuffled reports whether the queue order is currently shuffle-descended.
+func (s *State) Shuffled() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.shuffled
 }
 
 // ClearQueue empties the queue without touching history or loop mode.
@@ -120,6 +131,7 @@ func (s *State) ClearQueue() {
 	defer s.mu.Unlock()
 	s.queue = nil
 	s.requesters = nil
+	s.shuffled = false
 }
 
 // Len returns the number of queued tracks.
@@ -143,6 +155,14 @@ func (s *State) LoopMode() LoopMode {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.loop
+}
+
+// SetShuffled overrides the shuffled flag (restore path only — no unshuffle
+// command exists, so nothing else writes it directly).
+func (s *State) SetShuffled(shuffled bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shuffled = shuffled
 }
 
 // SetLoopMode updates the loop mode.
@@ -178,6 +198,16 @@ func (s *State) PopHistory() (lavalink.Track, bool) {
 type Manager struct {
 	mu     sync.RWMutex
 	states map[snowflake.ID]*State
+}
+
+// PeekHistory returns the most recently finished track without popping it.
+func (s *State) PeekHistory() (lavalink.Track, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.history) == 0 {
+		return lavalink.Track{}, false
+	}
+	return s.history[len(s.history)-1], true
 }
 
 // NewManager returns an empty Manager.

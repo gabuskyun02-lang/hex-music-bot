@@ -47,6 +47,9 @@ func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 			status = append(status, "🔄 Autoplay")
 		}
 	}
+	if state.Shuffled() {
+		status = append(status, "🔀 Shuffled")
+	}
 	footer := "⏱ " + ui.FormatDuration(total)
 	if len(status) > 0 {
 		footer += "\n" + strings.Join(status, " · ")

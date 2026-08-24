@@ -3,6 +3,8 @@ package bot
 import (
 	"context"
 	"log/slog"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/disgoorg/disgolink/v4/disgolink"
@@ -34,6 +36,13 @@ func (b *Bot) SaveSnapshot(guildID snowflake.ID) {
 		snap.Queue = append(snap.Queue, t.Info.Identifier)
 	}
 	snap.LoopMode = state.LoopMode().String()
+	if p != nil {
+		snap.Paused = p.Paused
+	}
+	snap.Shuffled = state.Shuffled()
+	if prev, ok := state.PeekHistory(); ok {
+		snap.PreviousIdentifier = prev.Info.Identifier
+	}
 
 	if err := b.Store.SavePlayerSnapshot(context.Background(), snap); err != nil {
 		slog.Debug("snapshot save failed", slog.Any("err", err))
@@ -80,7 +89,9 @@ func (b *Bot) RestoreSnapshots() {
 		} else if snap.LoopMode == "queue" {
 			b.Player.Get(guildID).SetLoopMode(player.LoopQueue)
 		}
-
+		if snap.Shuffled {
+			b.Player.Get(guildID).SetShuffled(true)
+		}
 		if snap.CurrentIdentifier != "" {
 			go b.restorePlayback(node, pl, guildID, snap)
 		} else if len(snap.Queue) > 0 {
@@ -94,6 +105,25 @@ func (b *Bot) RestoreSnapshots() {
 						_ = pl.Update(context.TODO(), disgolink.WithTrack(first))
 					}
 				}
+			}()
+		}
+		if snap.PreviousIdentifier != "" {
+			go func() {
+				node.Rest.LoadTracksHandler(context.Background(), snap.PreviousIdentifier, disgolink.NewTrackLoadingResultHandler(
+					func(t lavalink.Track) { b.Player.Get(guildID).PushHistory(t) },
+					func(p lavalink.Playlist) {
+						if len(p.Tracks) > 0 {
+							b.Player.Get(guildID).PushHistory(p.Tracks[0])
+						}
+					},
+					func(ts []lavalink.Track) {
+						if len(ts) > 0 {
+							b.Player.Get(guildID).PushHistory(ts[0])
+						}
+					},
+					func() {},
+					func(err error) {}, // convenience, not critical: silent skip
+				))
 			}()
 		}
 		if snap.TextChannelID != "" {
@@ -130,14 +160,17 @@ func (b *Bot) restorePlayback(node *disgolink.Node, pl *disgolink.Player, guildI
 		return
 	}
 
+	// Single REST call: track + volume + position + paused land atomically, so
+	// the track never plays audibly before the seek lands.
+	opts := []disgolink.PlayerUpdateOpt{
+		disgolink.WithTrack(*resolved),
+		disgolink.WithPosition(lavalink.Duration(snap.CurrentPositionMS)),
+		disgolink.WithPaused(snap.Paused),
+	}
 	if snap.Volume > 0 && snap.Volume != 100 {
-		_ = pl.Update(context.TODO(), disgolink.WithTrack(*resolved), disgolink.WithVolume(snap.Volume))
-	} else {
-		_ = pl.Update(context.TODO(), disgolink.WithTrack(*resolved))
+		opts = append(opts, disgolink.WithVolume(snap.Volume))
 	}
-	if snap.CurrentPositionMS > 0 {
-		_ = pl.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(snap.CurrentPositionMS)))
-	}
+	_ = pl.Update(ctx, opts...)
 	b.restoreQueue(node, guildID, snap.Queue)
 	slog.Info("24/7 restored",
 		slog.String("guild", snap.GuildID),
@@ -146,26 +179,62 @@ func (b *Bot) restorePlayback(node *disgolink.Node, pl *disgolink.Player, guildI
 }
 
 func (b *Bot) restoreQueue(node *disgolink.Node, guildID snowflake.ID, queue []string) {
-	for _, id := range queue {
-		resolve := func(id string) {
+	// Resolve in parallel, collect by index: order follows the saved queue,
+	// not HTTP completion order. Serial fallback on any resolution error.
+	resolved := make([][]lavalink.Track, len(queue))
+	failed := make([]bool, len(queue))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // bound concurrent LoadTracks calls per node
+	for i, id := range queue {
+		wg.Add(1)
+		go func(i int, id string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			node.Rest.LoadTracksHandler(ctx, id, disgolink.NewTrackLoadingResultHandler(
-				func(t lavalink.Track) { b.Player.Get(guildID).Enqueue(t) },
+				func(t lavalink.Track) { resolved[i] = append(resolved[i], t) },
+				func(p lavalink.Playlist) { resolved[i] = append(resolved[i], p.Tracks...) },
+				func(ts []lavalink.Track) { resolved[i] = append(resolved[i], ts...) },
+				func() {},
+				func(err error) { failed[i] = true },
+			))
+		}(i, id)
+	}
+	wg.Wait()
+
+	state := b.Player.Get(guildID)
+	for _, tracks := range resolved {
+		for _, t := range tracks {
+			state.Enqueue(t)
+		}
+	}
+	if slices.Contains(failed, true) {
+		// Serial fallback: clear the partial queue (loop mode and history are
+		// set by the caller, so ClearQueue — not state deletion) and re-resolve
+		// one at a time in strict order.
+		state.ClearQueue()
+		for _, id := range queue {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			node.Rest.LoadTracksHandler(ctx, id, disgolink.NewTrackLoadingResultHandler(
+				func(t lavalink.Track) { state.Enqueue(t) },
 				func(p lavalink.Playlist) {
 					for _, t := range p.Tracks {
-						b.Player.Get(guildID).Enqueue(t)
+						state.Enqueue(t)
 					}
 				},
 				func(ts []lavalink.Track) {
 					for _, t := range ts {
-						b.Player.Get(guildID).Enqueue(t)
+						state.Enqueue(t)
 					}
 				},
 				func() {},
 				func(err error) {},
 			))
 		}
-		resolve(id)
 	}
 }
