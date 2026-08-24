@@ -54,6 +54,8 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 		Handlers: make(map[string]CommandHandler),
 	}
 	b.Filters = newFilterManager(b)
+	b.Cooldowns = NewCooldownGate()
+	b.voice = NewVoiceWatch(b)
 	b.Votes = NewVoteManager()
 	b.Pagers = NewPagerManager()
 	b.Sync = NewLyricSyncManager(b)
