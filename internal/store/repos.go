@@ -256,14 +256,17 @@ func (s *Store) BlendedTasteArtists(ctx context.Context, userIDs []string) ([]Ta
 // --- Player Snapshots (24/7 restart survival) ---
 
 type PlayerSnapshot struct {
-	GuildID           string
-	TextChannelID     string
-	VoiceChannelID    string
-	CurrentIdentifier string
-	CurrentPositionMS int64
-	Queue             []string
-	Volume            int
-	LoopMode          string
+	GuildID            string
+	TextChannelID      string
+	VoiceChannelID     string
+	CurrentIdentifier  string
+	CurrentPositionMS  int64
+	Queue              []string
+	Volume             int
+	LoopMode           string
+	Paused             bool
+	Shuffled           bool
+	PreviousIdentifier string
 }
 
 func (s *Store) SavePlayerSnapshot(ctx context.Context, snap *PlayerSnapshot) error {
@@ -272,17 +275,19 @@ func (s *Store) SavePlayerSnapshot(ctx context.Context, snap *PlayerSnapshot) er
 		return fmt.Errorf("marshal queue: %w", err)
 	}
 	_, err = s.db.ExecContext(ctx,
-		`INSERT INTO player_snapshots (guild_id, text_channel_id, voice_channel_id, current_identifier, current_position_ms, queue, volume, loop_mode)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`INSERT INTO player_snapshots (guild_id, text_channel_id, voice_channel_id, current_identifier, current_position_ms, queue, volume, loop_mode, paused, shuffled, previous_identifier)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(guild_id) DO UPDATE SET
 		   text_channel_id = ?, voice_channel_id = ?, current_identifier = ?,
 		   current_position_ms = ?, queue = ?, volume = ?, loop_mode = ?,
+		   paused = ?, shuffled = ?, previous_identifier = ?,
 		   saved_at = datetime('now')`,
 		snap.GuildID, snap.TextChannelID, snap.VoiceChannelID,
 		snap.CurrentIdentifier, snap.CurrentPositionMS, string(queueJSON),
-		snap.Volume, snap.LoopMode,
+		snap.Volume, snap.LoopMode, snap.Paused, snap.Shuffled, snap.PreviousIdentifier,
 		snap.TextChannelID, snap.VoiceChannelID, snap.CurrentIdentifier,
 		snap.CurrentPositionMS, string(queueJSON), snap.Volume, snap.LoopMode,
+		snap.Paused, snap.Shuffled, snap.PreviousIdentifier,
 	)
 	return err
 }
@@ -418,7 +423,7 @@ func (s *Store) AddPlaylistTrack(ctx context.Context, playlistID int64, t Playli
 // AllSnapshots returns every saved player snapshot (for boot-time restore).
 func (s *Store) AllSnapshots(ctx context.Context) ([]*PlayerSnapshot, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT guild_id, text_channel_id, voice_channel_id, current_identifier, current_position_ms, queue, volume, loop_mode
+		`SELECT guild_id, text_channel_id, voice_channel_id, current_identifier, current_position_ms, queue, volume, loop_mode, paused, shuffled, previous_identifier
 		 FROM player_snapshots`)
 	if err != nil {
 		return nil, err
@@ -429,7 +434,8 @@ func (s *Store) AllSnapshots(ctx context.Context) ([]*PlayerSnapshot, error) {
 		var snap PlayerSnapshot
 		var queueJSON string
 		if err := rows.Scan(&snap.GuildID, &snap.TextChannelID, &snap.VoiceChannelID,
-			&snap.CurrentIdentifier, &snap.CurrentPositionMS, &queueJSON, &snap.Volume, &snap.LoopMode); err != nil {
+			&snap.CurrentIdentifier, &snap.CurrentPositionMS, &queueJSON, &snap.Volume, &snap.LoopMode,
+			&snap.Paused, &snap.Shuffled, &snap.PreviousIdentifier); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(queueJSON), &snap.Queue); err != nil {

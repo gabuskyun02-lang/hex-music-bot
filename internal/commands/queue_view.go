@@ -14,9 +14,9 @@ import (
 	"hex-music-bot/internal/ui"
 )
 
-const queueDisplayLimit = 10
-
-// Queue lists the queued tracks with loop-mode status.
+// Queue lists every queued track in a V2 container: per-track source badge,
+// linked title, duration, requester mention; footer carries total runtime and
+// non-default mode flags. Long queues paginate through a PagerSession.
 func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	state := b.Player.Get(*event.GuildID())
 	tracks := state.Snapshot()
@@ -25,37 +25,39 @@ func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	}
 
 	var total lavalink.Duration
-	for _, t := range tracks {
-		total += t.Info.Length
+	rows := make([]string, 0, len(tracks))
+	for i, track := range tracks {
+		total += track.Info.Length
+		row := fmt.Sprintf("`%d.` %s %s · `%s`", i+1,
+			ui.SourceBadgeFor(track.Info.SourceName).Emoji, ui.TrackMarkdown(track),
+			ui.FormatDuration(track.Info.Length))
+		if req := state.RequesterFor(track.Info.Identifier); req != 0 {
+			row += fmt.Sprintf(" · <@%s>", req)
+		}
+		rows = append(rows, row)
 	}
 
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "**Up next** (%d tracks)\n\n", len(tracks))
-	for i, track := range tracks[:min(len(tracks), queueDisplayLimit)] {
-		fmt.Fprintf(&sb, "`%d.` %s · `%s`\n", i+1, ui.TrackMarkdown(track), ui.FormatDuration(track.Info.Length))
+	status := []string{}
+	if state.LoopMode() != player.LoopOff {
+		status = append(status, "🔁 Loop "+state.LoopMode().String())
 	}
-	if remaining := len(tracks) - queueDisplayLimit; remaining > 0 {
-		fmt.Fprintf(&sb, "\n…and %d more", remaining)
-	}
-
-	status := []string{"🔁 Loop: `" + state.LoopMode().String() + "`"}
 	if b.Cfg != nil {
 		settings, _ := b.Store.GetGuildSettings(context.Background(), event.GuildID().String())
 		if settings != nil && settings.Autoplay {
 			status = append(status, "🔄 Autoplay")
 		}
 	}
+	footer := "⏱ " + ui.FormatDuration(total)
+	if len(status) > 0 {
+		footer += "\n" + strings.Join(status, " · ")
+	}
 
-	inlineTrue := true
-	return b.ReplyEmbed(event, discord.Embed{
-		Title:       "📋 Queue",
-		Description: sb.String(),
-		Color:       0x5865F2,
-		Footer:      &discord.EmbedFooter{Text: strings.Join(status, " • ")},
-		Fields: []discord.EmbedField{
-			{Name: "Total runtime", Value: "`" + ui.FormatDuration(total) + "`", Inline: &inlineTrue},
-		},
-	})
+	header := fmt.Sprintf("📋 Up next (%d)", len(tracks))
+	if session, paged := b.NewPagerSession(header, rows, footer, 0x5865F2); paged {
+		comps := append(hexbot.RenderPagerPage(session), hexbot.PagerButtons(session, session.Page))
+		return b.ReplyV2(event, comps, false)
+	}
+	return b.ReplyV2(event, hexbot.BuildListContainer(header, rows, footer, 0x5865F2), false)
 }
 
 // NowPlaying reports the current track as a static V2 snapshot of the live

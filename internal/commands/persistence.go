@@ -12,27 +12,42 @@ import (
 	"hex-music-bot/internal/store"
 )
 
-const historyDisplayLimit = 10
-
 // History shows recently played tracks for the guild or a specific user.
 func History(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	guildID := *event.GuildID()
 	var records []store.PlayRecord
-	var label string
-
-	if userID, ok := data.OptSnowflake("user"); ok {
-		records, _ = b.Store.UserPlays(context.Background(), guildID.String(), userID.String(), historyDisplayLimit)
-		label = fmt.Sprintf("**Recent plays** for <@%s>", userID)
+	var userID string
+	if id, ok := data.OptSnowflake("user"); ok {
+		userID = id.String()
+		records, _ = b.Store.UserPlays(context.Background(), guildID.String(), userID, historyFetchLimit)
 	} else {
-		records, _ = b.Store.RecentPlays(context.Background(), guildID.String(), historyDisplayLimit)
-		label = "**Recently played**"
+		records, _ = b.Store.RecentPlays(context.Background(), guildID.String(), historyFetchLimit)
 	}
 
 	if len(records) == 0 {
 		return b.ReplyEmbed(event, hexbot.InfoEmbed("🕘 History", "No play history yet — play something first!"))
 	}
 
-	var sb strings.Builder
+	header := "🕘 Recently played"
+	if userID != "" {
+		header = fmt.Sprintf("🕘 Recent plays — <@%s>", userID)
+	}
+	rows := historyRows(records)
+	footer := fmt.Sprintf("%d track(s) · most recent first", len(records))
+	if session, paged := b.NewPagerSession(header, rows, footer, 0x5865F2); paged {
+		comps := append(hexbot.RenderPagerPage(session), hexbot.PagerButtons(session, session.Page))
+		return b.ReplyV2(event, comps, false)
+	}
+	return b.ReplyV2(event, hexbot.BuildListContainer(header, rows, footer, 0x5865F2), false)
+}
+
+const historyFetchLimit = 100
+
+// historyRows renders PlayRecords as list rows: `N.` [title](<uri>) ·
+// <@requester> · `15:04`, keeping the existing trimming rules (57 runes +
+// ellipsis; bare title when the record has no URI).
+func historyRows(records []store.PlayRecord) []string {
+	rows := make([]string, 0, len(records))
 	for i, r := range records {
 		ts := ""
 		if !r.PlayedAt.IsZero() {
@@ -46,23 +61,15 @@ func History(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 		if r.RequesterID != "" && r.RequesterID != "0" {
 			req = fmt.Sprintf(" · <@%s>", r.RequesterID)
 		}
+		var row string
 		if r.URI != "" {
-			fmt.Fprintf(&sb, "**%d.** [`%s`](<%s>)%s `%s`\n", i+1, line, r.URI, req, ts)
+			row = fmt.Sprintf("`%d.` [`%s`](<%s>)%s `%s`", i+1, line, r.URI, req, ts)
 		} else {
-			fmt.Fprintf(&sb, "**%d.** `%s`%s `%s`\n", i+1, line, req, ts)
+			row = fmt.Sprintf("`%d.` `%s`%s `%s`", i+1, line, req, ts)
 		}
+		rows = append(rows, row)
 	}
-
-	title := "🕘 Recently played"
-	if label != "" {
-		title = "🕘 Recent plays"
-	}
-	return b.ReplyEmbed(event, discord.Embed{
-		Title:       title,
-		Description: strings.TrimRight(sb.String(), "\n"),
-		Color:       0x5865F2,
-		Footer:      &discord.EmbedFooter{Text: fmt.Sprintf("%d track(s) · most recent first", len(records))},
-	})
+	return rows
 }
 
 // Taste manages per-user preferred artists for autoplay blending.

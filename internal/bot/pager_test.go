@@ -42,7 +42,7 @@ func TestPagerPageTurns(t *testing.T) {
 	}
 
 	// Rendering: header, rows of current page only, page indicator.
-	comps := renderPagerPage(last)
+	comps := RenderPagerPage(last)
 	var texts []string
 	for _, c := range comps {
 		if container, ok := c.(discord.ContainerComponent); ok {
@@ -80,7 +80,7 @@ func TestPagerChunking(t *testing.T) {
 	for i := range 120 {
 		rows = append(rows, strings.Repeat("r", 100)+" "+strings.Repeat("=", i)) // ~100+ chars each
 	}
-	comps := buildListContainer("📋 Big list (120)", rows, "Page 1/1 · 120 tracks", 0x5865F2)
+	comps := BuildListContainer("📋 Big list (120)", rows, "Page 1/1 · 120 tracks", 0x5865F2)
 	displays := 0
 	for _, c := range comps {
 		container, ok := c.(discord.ContainerComponent)

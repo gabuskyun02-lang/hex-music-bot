@@ -102,11 +102,14 @@ func clampPage(s *PagerSession, page int) int {
 	return page
 }
 
-// buildListContainer renders header/rows/footer as one V2 container.
+// BuildListContainer renders header/rows/footer as one V2 container.
 // Rows are chunked into TextDisplays at a 3500-rune safety ceiling
 // (~55-60 list rows per display under Discord's 4000-char component cap).
 // Shared by queue/history conversions and the pager's page turns.
-func buildListContainer(header string, rows []string, footer string, accent int) []discord.LayoutComponent {
+//
+// SplitListRows pre-chunks rows into pages; NewPagerSession assembles them
+// into a PagerSession — both exported for the commands package.
+func BuildListContainer(header string, rows []string, footer string, accent int) []discord.LayoutComponent {
 	c := discord.ContainerComponent{AccentColor: accent}
 	c.Components = append(c.Components,
 		discord.TextDisplayComponent{Content: "### " + header},
@@ -139,8 +142,8 @@ func buildListContainer(header string, rows []string, footer string, accent int)
 	return []discord.LayoutComponent{c}
 }
 
-// pagerButtons builds the ⏮ ◀ ✖ ▶ ⏭ row for a session page state.
-func pagerButtons(s *PagerSession, page int) discord.LayoutComponent {
+// PagerButtons builds the ⏮ ◀ ✖ ▶ ⏭ row for a session page state.
+func PagerButtons(s *PagerSession, page int) discord.LayoutComponent {
 	id := func(action string) string { return "hexp:" + action + ":" + s.ID }
 	buttons := []discord.ButtonComponent{
 		discord.NewSecondaryButton("⏮", id("f")),
@@ -162,16 +165,50 @@ func pagerButtons(s *PagerSession, page int) discord.LayoutComponent {
 	return row
 }
 
-// renderPagerPage renders a session's current page through the shared
+// RenderPagerPage renders a session's current page through the shared
 // builder, with the page indicator prepended to the footer.
-func renderPagerPage(s *PagerSession) []discord.LayoutComponent {
+func RenderPagerPage(s *PagerSession) []discord.LayoutComponent {
 	footer := fmt.Sprintf("Page %d/%d · %s", s.Page+1, len(s.Rows), s.Footer)
-	return buildListContainer(s.Header, s.Rows[s.Page], footer, s.Accent)
+	return BuildListContainer(s.Header, s.Rows[s.Page], footer, s.Accent)
+}
+
+// NewPagerSession chunks rows into ~3500-rune pages, registers the session
+// with the bot's PagerManager, and reports whether pagination is needed
+// (>1 page). Single-page lists render directly via BuildListContainer.
+func (b *Bot) NewPagerSession(header string, rows []string, footer string, accent int) (*PagerSession, bool) {
+	if len(rows) <= 1 {
+		return nil, false
+	}
+	var pages [][]string
+	var current []string
+	count := 0
+	for _, row := range rows {
+		n := len([]rune(row)) + 1 // trailing newline joins rows in one display
+		if count+n > 3500 && count > 0 {
+			pages = append(pages, current)
+			current = nil
+			count = 0
+		}
+		current = append(current, row)
+		count += n
+	}
+	if current != nil {
+		pages = append(pages, current)
+	}
+	s := &PagerSession{
+		ID:      newPagerSessionID(),
+		Header:  header,
+		Rows:    pages,
+		Footer:  footer,
+		Accent:  accent,
+		Expires: time.Now().Add(pagerSessionTTL),
+	}
+	b.Pagers.Put(s)
+	return s, true
 }
 
 // handlePagerButton serves hexp: clicks: page turns re-render the session
 // through buildListContainer via interaction update; ✖ strips the message
-// down to "*View closed*"; expired sessions get an ephemeral notice.
 // The click is acked by whichever update path runs — no bare defer needed.
 func (b *Bot) handlePagerButton(event *events.ComponentInteractionCreate, customID string) {
 	parts := strings.SplitN(customID, ":", 3)
@@ -212,7 +249,7 @@ func (b *Bot) handlePagerButton(event *events.ComponentInteractionCreate, custom
 		})
 		return
 	}
-	components := append(renderPagerPage(s), pagerButtons(s, s.Page))
+	components := append(RenderPagerPage(s), PagerButtons(s, s.Page))
 	_ = event.UpdateMessage(discord.NewMessageUpdateV2(components))
 }
 
