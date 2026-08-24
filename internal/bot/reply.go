@@ -16,6 +16,17 @@ func (b *Bot) ReplyEmbed(event *events.ApplicationCommandInteractionCreate, embe
 	return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
 }
 
+// ReplyV2 answers an interaction with Components V2 layout components.
+// V2 messages reject Embeds — converted surfaces must build containers only.
+func (b *Bot) ReplyV2(event *events.ApplicationCommandInteractionCreate,
+	comps []discord.LayoutComponent, ephemeral bool) error {
+	flags := discord.MessageFlagIsComponentsV2
+	if ephemeral {
+		flags |= discord.MessageFlagEphemeral
+	}
+	return event.CreateMessage(discord.MessageCreate{Flags: flags, Components: comps})
+}
+
 // EditReply replaces a deferred interaction response with plain text.
 func (b *Bot) EditReply(event *events.ApplicationCommandInteractionCreate, content string) error {
 	_, err := b.Client.Rest.UpdateInteractionResponse(

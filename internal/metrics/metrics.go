@@ -37,6 +37,7 @@ func New() *Metrics {
 	m.counter("hex_music_bot_tracks_failed", "Tracks that threw exceptions")
 	m.counter("hex_music_bot_failovers_attempted", "Alternate-source failover attempts")
 	m.counter("hex_music_bot_failovers_succeeded", "Successful failovers")
+	m.counter("hex_music_bot_card_coalesced", "Card edits skipped as byte-identical")
 	m.counter("hex_music_bot_skips", "Total skip commands/button presses")
 	m.counter("hex_music_bot_card_edits", "Player card REST edits sent")
 	m.counter("hex_music_bot_commands_total", "Slash commands executed")

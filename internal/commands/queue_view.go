@@ -58,41 +58,14 @@ func Queue(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ d
 	})
 }
 
-// NowPlaying reports the current track with position and length as an embed.
+// NowPlaying reports the current track as a static V2 snapshot of the live
+// card body (no buttons — the in-channel card stays the control surface).
 func NowPlaying(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, _ discord.SlashCommandInteractionData) error {
 	player := b.Lavalink.ExistingPlayer(*event.GuildID())
 	if player == nil || player.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
-	track := *player.Track
-	badge := ui.SourceBadgeFor(track.Info.SourceName)
-	status := "▶ Now Playing"
-	if player.Paused {
-		status = "⏸ Paused"
-	}
-	status = badge.Emoji + " " + status
-
-	pos, total := player.Position(), track.Info.Length
-	progress := ui.ProgressBar(pos, total, 18)
-
-	inlineTrue := true
-	embed := discord.Embed{
-		Title:       status,
-		Description: fmt.Sprintf("**%s**\n%s", ui.TrackMarkdown(track), track.Info.Author),
-		Color:       badge.Color,
-		Fields: []discord.EmbedField{
-			{Name: "Progress", Value: progress},
-			{Name: "Source", Value: badge.Emoji + " `" + track.Info.SourceName + "`", Inline: &inlineTrue},
-			{Name: "Volume", Value: fmt.Sprintf("`%d`", player.Volume), Inline: &inlineTrue},
-			{Name: "Loop", Value: "`" + b.Player.Get(*event.GuildID()).LoopMode().String() + "`", Inline: &inlineTrue},
-			{Name: "Queue", Value: fmt.Sprintf("`%d` tracks", b.Player.Get(*event.GuildID()).Len()), Inline: &inlineTrue},
-		},
-	}
-	if track.Info.ArtworkURL != nil && *track.Info.ArtworkURL != "" {
-		embed.Thumbnail = &discord.EmbedResource{URL: *track.Info.ArtworkURL}
-	}
-
-	return b.ReplyEmbed(event, embed)
+	return b.ReplyV2(event, b.RenderCardBody(*event.GuildID()), false)
 }
 
 // Shuffle randomizes the queue order via the shared action.

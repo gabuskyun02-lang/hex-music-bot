@@ -2,9 +2,12 @@ package bot
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/disgoorg/disgo/discord"
@@ -13,12 +16,32 @@ import (
 	"hex-music-bot/internal/ui"
 )
 
-const cardTickInterval = 10 * time.Second
+const (
+	cardTickInterval = 10 * time.Second
+
+	// ponytail: cardMinEditInterval is a flat per-guild floor against the
+	// 5-edits/5s channel bucket, not a real rate limiter. If multi-guild
+	// load ever brushes 429s anyway, upgrade to a shared token bucket keyed
+	// by channel in the edit chokepoint.
+	cardMinEditInterval = 1500 * time.Millisecond
+)
 
 type cardEntry struct {
 	channelID snowflake.ID
 	messageID snowflake.ID
 	cancel    context.CancelFunc
+	wake      chan struct{} // buffered(1) wakeup token; dirty carries intent
+	dirty     atomic.Bool   // render+edit pending
+	lastHash  string        // fnv64a of last edited payload
+	lastEdit  time.Time
+	done      chan struct{} // closed when the pump exits
+}
+
+// cardBody couples the rendered body with the button-deck state captured
+// during the render pass.
+type cardBody struct {
+	comps []discord.LayoutComponent
+	cs    cardState
 }
 
 // CardManager owns one live player card per guild plus its refresh ticker.
@@ -69,7 +92,13 @@ func (m *CardManager) Create(guildID, channelID snowflake.ID) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	entry := &cardEntry{channelID: channelID, messageID: msg.ID, cancel: cancel}
+	entry := &cardEntry{
+		channelID: channelID,
+		messageID: msg.ID,
+		cancel:    cancel,
+		wake:      make(chan struct{}, 1),
+		done:      make(chan struct{}),
+	}
 	m.mu.Lock()
 	if m.cards[guildID] != reserve { // superseded while creating
 		cancel()
@@ -79,35 +108,76 @@ func (m *CardManager) Create(guildID, channelID snowflake.ID) {
 	}
 	m.cards[guildID] = entry
 	m.mu.Unlock()
-	go m.ticker(ctx, guildID, entry)
+	go m.pump(ctx, guildID, entry)
 }
 
-func (m *CardManager) ticker(ctx context.Context, guildID snowflake.ID, entry *cardEntry) {
+// pump is the per-guild card editor: it coalesces Refresh signals and the
+// periodic tick into at most one REST edit per change, skipping edits whose
+// serialized payload is byte-identical to the last one sent.
+func (m *CardManager) pump(ctx context.Context, guildID snowflake.ID, entry *cardEntry) {
+	defer close(entry.done)
 	t := time.NewTicker(cardTickInterval)
-	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-entry.wake:
 		case <-t.C:
-			m.edit(guildID, entry, m.b.renderCard(guildID))
+			entry.dirty.Store(true) // periodic check even when idle/paused
 		}
+		if !entry.dirty.CompareAndSwap(true, false) {
+			continue // spurious wake, nothing pending
+		}
+
+		comps := m.b.renderCard(guildID)
+		hash := componentHash(comps)
+		if hash == entry.lastHash {
+			m.b.Metrics.Inc("hex_music_bot_card_coalesced") // byte-identical payload
+			continue
+		}
+		if since := time.Since(entry.lastEdit); since < cardMinEditInterval {
+			time.Sleep(cardMinEditInterval - since)
+			comps = m.b.renderCard(guildID) // latest-wins re-render
+			hash = componentHash(comps)
+			if hash == entry.lastHash {
+				m.b.Metrics.Inc("hex_music_bot_card_coalesced")
+				continue
+			}
+		}
+		m.edit(guildID, entry, comps)
+		entry.lastHash = hash
+		entry.lastEdit = time.Now()
 	}
+}
+
+// componentHash fingerprints a rendered payload so identical renders can be
+// skipped without a REST round trip.
+func componentHash(comps []discord.LayoutComponent) string {
+	data, err := json.Marshal(comps)
+	if err != nil {
+		return fmt.Sprintf("%p", comps) // unmarshalable payload always edits
+	}
+	h := fnv.New64a()
+	h.Write(data)
+	return string(h.Sum(nil))
 }
 
 func (m *CardManager) Refresh(guildID snowflake.ID) {
 	m.mu.Lock()
 	entry, ok := m.cards[guildID]
 	m.mu.Unlock()
-	if ok && entry.messageID != 0 { // zero = creation in progress
-		m.edit(guildID, entry, m.b.renderCard(guildID))
+	if !ok || entry.messageID == 0 { // zero = creation in progress
+		return
+	}
+	entry.dirty.Store(true)
+	select {
+	case entry.wake <- struct{}{}:
+	default: // pump already has a pending wake
 	}
 }
 
 func (m *CardManager) Finalize(guildID snowflake.ID, reason string) {
-	m.mu.Lock()
-	entry, ok := m.removeLocked(guildID)
-	m.mu.Unlock()
+	entry, ok := m.removeAndWait(guildID)
 	if !ok || entry.messageID == 0 { // zero = creation in progress
 		return
 	}
@@ -118,16 +188,27 @@ func (m *CardManager) Finalize(guildID snowflake.ID, reason string) {
 }
 
 func (m *CardManager) Drop(guildID snowflake.ID) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.removeLocked(guildID)
+	m.removeAndWait(guildID)
 }
 
-func (m *CardManager) removeLocked(guildID snowflake.ID) (*cardEntry, bool) {
+// removeAndWait cancels the guild's pump and waits (bounded) for it to exit,
+// so an in-flight pump edit can never interleave with a subsequent direct
+// write such as the Finalize locked-card edit.
+func (m *CardManager) removeAndWait(guildID snowflake.ID) (*cardEntry, bool) {
+	m.mu.Lock()
 	entry, ok := m.cards[guildID]
 	if ok {
 		entry.cancel()
 		delete(m.cards, guildID)
+	}
+	m.mu.Unlock()
+	if !ok || entry.done == nil {
+		return entry, ok
+	}
+	select {
+	case <-entry.done:
+	case <-time.After(2 * time.Second):
+		slog.Debug("card pump shutdown timed out", slog.String("guild", guildID.String()))
 	}
 	return entry, ok
 }
@@ -150,11 +231,20 @@ func (m *CardManager) edit(guildID snowflake.ID, entry *cardEntry, comps []disco
 	}
 }
 
-// renderCard builds the live Components V2 card.
-func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
+// RenderCardBody exposes the card's information section (header, progress,
+// up-next, requester line, footer stats — no control buttons) for the
+// /now-playing snapshot reply.
+func (b *Bot) RenderCardBody(guildID snowflake.ID) []discord.LayoutComponent {
+	return b.renderCardBodyState(guildID).comps
+}
+
+// renderCardBodyState renders the card body and returns the button-deck state
+// captured during the pass, so renderCard never re-reads player state.
+func (b *Bot) renderCardBodyState(guildID snowflake.ID) cardBody {
 	container := discord.ContainerComponent{AccentColor: ui.SourceBadgeFor("").Color}
 	state := b.Player.Get(guildID)
 	p := b.Lavalink.ExistingPlayer(guildID)
+	out := cardBody{comps: []discord.LayoutComponent{container}}
 
 	if p == nil || p.Track == nil {
 		container.Components = append(container.Components,
@@ -163,16 +253,15 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 					state.Len(), state.LoopMode()),
 			},
 		)
-		container.Components = append(container.Components, asContainerSubs(cardButtons(cardState{locked: true}))...)
-		return []discord.LayoutComponent{container}
+		return out
 	}
-
 	track := *p.Track
 	badge := ui.SourceBadgeFor(track.Info.SourceName)
 	sourceName := formatSourceName(track.Info.SourceName)
+	cs := cardState{paused: p.Paused}
 	status := "▶ Now Playing"
 	if p.Paused {
-		status = "⏸ Paused"
+		status = "⏸ Paused" + pauseReasonSuffix(cs.pauseReason)
 	}
 	header := discord.TextDisplayComponent{
 		Content: fmt.Sprintf("%s **%s**\n%s\n%s · %s `%s`",
@@ -187,9 +276,6 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 			Description: track.Info.Title,
 		}
 	}
-	container.Components = append(container.Components, section)
-
-	// Progress bar
 	progress := "🔴 LIVE"
 	if !track.Info.IsStream {
 		progress = ui.ProgressBar(p.Position(), track.Info.Length, 18)
@@ -211,21 +297,40 @@ func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
 			progress, upNext, state.LoopMode(), p.Volume, state.Len(), requesterLine),
 	}
 	container.Components = append(container.Components,
+		section,
 		discord.SeparatorComponent{},
 		footer,
 		discord.SeparatorComponent{},
 	)
+	out.cs = cs
+	return out
+}
 
-	loopStr := state.LoopMode().String()
-	cs := cardState{
-		paused:     p.Paused,
-		loop:       loopStr,
-		queueEmpty: state.Len() == 0,
+// renderCard builds the live Components V2 card: body plus the hex:* button
+// deck. Only the live card carries controls; snapshot replies stay static.
+func (b *Bot) renderCard(guildID snowflake.ID) []discord.LayoutComponent {
+	body := b.renderCardBodyState(guildID)
+	buttons := asContainerSubs(cardButtons(body.cs))
+	for _, comp := range body.comps {
+		if c, ok := comp.(discord.ContainerComponent); ok {
+			c.Components = append(c.Components, buttons...)
+			return []discord.LayoutComponent{c}
+		}
 	}
-	container.AccentColor = badge.Color
-	container.Components = append(container.Components, asContainerSubs(cardButtons(cs))...)
+	return body.comps
+}
 
-	return []discord.LayoutComponent{container}
+// pauseReasonSuffix appends a Beatra-style auto-pause indicator to the status
+// line. Reason stays unpopulated until the future auto-pause feature lands.
+func pauseReasonSuffix(reason string) string {
+	switch reason {
+	case "mute":
+		return " 🔇"
+	case "alone":
+		return " ⏳"
+	default:
+		return ""
+	}
 }
 
 func renderCardLocked(reason string) []discord.LayoutComponent {
@@ -238,10 +343,11 @@ func renderCardLocked(reason string) []discord.LayoutComponent {
 }
 
 type cardState struct {
-	locked     bool
-	paused     bool
-	loop       string
-	queueEmpty bool
+	locked      bool
+	paused      bool
+	pauseReason string
+	loop        string
+	queueEmpty  bool
 }
 
 func cardButtons(cs cardState) []discord.LayoutComponent {
