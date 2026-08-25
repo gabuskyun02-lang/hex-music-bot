@@ -52,6 +52,7 @@ const historyCap = 50
 // use from gateway events and interaction handlers.
 type State struct {
 	mu               sync.Mutex
+	maxQueue         int
 	queue            []lavalink.Track
 	history          []lavalink.Track // finished tracks, most recent last
 	loop             LoopMode
@@ -61,23 +62,51 @@ type State struct {
 }
 
 // EnqueueAs appends tracks to the queue, recording who requested them.
-func (s *State) EnqueueAs(requesterID snowflake.ID, tracks ...lavalink.Track) {
+// Returns the number of tracks actually added and the number rejected
+// due to the queue cap (maxQueue). When maxQueue <= 0, no cap applies.
+func (s *State) EnqueueAs(requesterID snowflake.ID, tracks ...lavalink.Track) (added, rejected int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.requesters == nil {
 		s.requesters = make(map[string]snowflake.ID)
 	}
-	for _, t := range tracks {
+	accept := tracks
+	if s.maxQueue > 0 {
+		room := s.maxQueue - len(s.queue)
+		if room < 0 {
+			room = 0
+		}
+		if len(accept) > room {
+			rejected = len(accept) - room
+			accept = accept[:room]
+		}
+	}
+	for _, t := range accept {
 		s.requesters[t.Info.Identifier] = requesterID
 	}
-	s.queue = append(s.queue, tracks...)
+	s.queue = append(s.queue, accept...)
+	return len(accept), rejected
 }
 
 // Enqueue appends tracks to the back of the queue.
-func (s *State) Enqueue(tracks ...lavalink.Track) {
+// Returns the number of tracks actually added and the number rejected
+// due to the queue cap.
+func (s *State) Enqueue(tracks ...lavalink.Track) (added, rejected int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.queue = append(s.queue, tracks...)
+	accept := tracks
+	if s.maxQueue > 0 {
+		room := s.maxQueue - len(s.queue)
+		if room < 0 {
+			room = 0
+		}
+		if len(accept) > room {
+			rejected = len(accept) - room
+			accept = accept[:room]
+		}
+	}
+	s.queue = append(s.queue, accept...)
+	return len(accept), rejected
 }
 
 // Next pops and returns the next queued track (no requester info) and
@@ -196,8 +225,9 @@ func (s *State) PopHistory() (lavalink.Track, bool) {
 
 // Manager owns all guild states.
 type Manager struct {
-	mu     sync.RWMutex
-	states map[snowflake.ID]*State
+	mu       sync.RWMutex
+	queueMax int
+	states   map[snowflake.ID]*State
 }
 
 // PeekHistory returns the most recently finished track without popping it.
@@ -210,9 +240,10 @@ func (s *State) PeekHistory() (lavalink.Track, bool) {
 	return s.history[len(s.history)-1], true
 }
 
-// NewManager returns an empty Manager.
-func NewManager() *Manager {
-	return &Manager{states: make(map[snowflake.ID]*State)}
+// NewManager returns an empty Manager. queueMax caps each guild's queue;
+// 0 means unlimited.
+func NewManager(queueMax int) *Manager {
+	return &Manager{queueMax: queueMax, states: make(map[snowflake.ID]*State)}
 }
 
 // Get returns the guild's state, creating it if missing.
@@ -221,7 +252,7 @@ func (m *Manager) Get(guildID snowflake.ID) *State {
 	defer m.mu.Unlock()
 	state, ok := m.states[guildID]
 	if !ok {
-		state = &State{}
+		state = &State{maxQueue: m.queueMax}
 		m.states[guildID] = state
 	}
 	return state
@@ -306,10 +337,14 @@ func (s *State) PeekNext() (lavalink.Track, bool) {
 }
 
 // InsertAtAs inserts a track at the given 0-based index, recording its
-// requester. Negative index clamps to the front.
-func (s *State) InsertAtAs(index int, track lavalink.Track, requesterID snowflake.ID) {
+// requester. Negative index clamps to the front. Returns false if the
+// queue is at cap.
+func (s *State) InsertAtAs(index int, track lavalink.Track, requesterID snowflake.ID) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.maxQueue > 0 && len(s.queue) >= s.maxQueue {
+		return false
+	}
 	if index < 0 {
 		index = 0
 	}
@@ -319,9 +354,10 @@ func (s *State) InsertAtAs(index int, track lavalink.Track, requesterID snowflak
 	s.requesters[track.Info.Identifier] = requesterID
 	if index >= len(s.queue) {
 		s.queue = append(s.queue, track)
-		return
+		return true
 	}
 	s.queue = append(s.queue[:index], append([]lavalink.Track{track}, s.queue[index:]...)...)
+	return true
 }
 
 // HasDuplicate checks if a track with the same title is already in the queue.

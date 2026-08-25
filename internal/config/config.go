@@ -30,6 +30,8 @@ type Config struct {
 
 	CardDJGated bool // gate destructive card buttons behind DJ role; default off
 
+	QueueMax int // max queued tracks per guild; 0 = unlimited
+
 	BotOwnerID snowflake.ID // /debug access control; zero = disabled
 }
 
@@ -63,6 +65,8 @@ func Load() (*Config, error) {
 			errs = append(errs, fmt.Errorf("LEAVE_TIMEOUT_SECONDS %q invalid: use a positive integer or 0 to disable", raw))
 		}
 	}
+
+	cfg.QueueMax = envInt("QUEUE_MAX", 500)
 
 	if cfg.Token == "" {
 		errs = append(errs, fmt.Errorf("DISCORD_TOKEN is required (https://discord.com/developers/applications)"))
@@ -214,6 +218,15 @@ func looksLikeHost(s string) bool {
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
+	}
+	return fallback
+}
+
+func envInt(key string, fallback int) int {
+	if v := os.Getenv(key); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil {
+			return parsed
+		}
 	}
 	return fallback
 }

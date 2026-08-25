@@ -91,11 +91,16 @@ func PlayTop(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	p := b.Lavalink.ExistingPlayer(guildID)
 
 	if p != nil && p.Track != nil {
-		queue.InsertAtAs(0, *toPlay, event.User().ID)
+		if !queue.InsertAtAs(0, *toPlay, event.User().ID) {
+			return b.EditReply(event, "⚠️ Queue is full")
+		}
 		msg := fmt.Sprintf("📌 %s will play next", ui.TrackMarkdown(*toPlay))
 		if len(enqueued) > 0 {
-			queue.EnqueueAs(event.User().ID, enqueued...)
-			msg += fmt.Sprintf(" (+%d playlist tracks)", len(enqueued))
+			added, rej := queue.EnqueueAs(event.User().ID, enqueued...)
+			msg += fmt.Sprintf(" (+%d playlist tracks)", added)
+			if rej > 0 {
+				msg += fmt.Sprintf("\n⚠️ Queue full — %d playlist track(s) rejected", rej)
+			}
 		}
 		return b.EditReply(event, msg)
 	}
@@ -207,7 +212,13 @@ func RemoveDupes(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreat
 // Filter applies an audio filter preset.
 func Filter(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data discord.SlashCommandInteractionData) error {
 	name := data.String("preset")
-	if err := b.Filters.SetFilter(*event.GuildID(), name); err != nil {
+	num := func(n string) *float64 {
+		if v, ok := data.OptFloat(n); ok {
+			return &v
+		}
+		return nil
+	}
+	if err := b.Filters.SetFilter(*event.GuildID(), name, num("speed"), num("pitch"), num("rate")); err != nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("❌ %v", err)))
 	}
 	if name == "reset" || name == "off" {
@@ -236,7 +247,7 @@ func Forward(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, d
 	if player == nil || player.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
-	newPos := int64(player.Position()) + ms
+	newPos := clampSeek(int64(player.Position())+ms, int64(player.Track.Info.Length))
 	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(newPos))); err != nil {
 		return err
 	}
@@ -258,10 +269,7 @@ func Rewind(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 	if player == nil || player.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
-	newPos := int64(player.Position()) - ms
-	if newPos < 0 {
-		newPos = 0
-	}
+	newPos := clampSeek(int64(player.Position())-ms, int64(player.Track.Info.Length))
 	if err := player.Update(context.TODO(), disgolink.WithPosition(lavalink.Duration(newPos))); err != nil {
 		return err
 	}

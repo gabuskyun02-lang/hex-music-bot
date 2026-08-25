@@ -63,12 +63,17 @@ func newFilterManager(b *Bot) *filterManager {
 	}
 }
 
-// SetFilter applies a named filter preset to the guild's player.
-// Preset "reset" clears all filters.
-func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
+// SetFilter applies a named filter preset to the guild's player. Optional
+// speed/pitch/rate override that preset's timescale component; unset
+// components keep the preset's values (neutral 1.0 without one). Preset
+// "reset" clears all filters.
+func (fm *filterManager) SetFilter(guildID snowflake.ID, name string, speed, pitch, rate *float64) error {
 	p := fm.b.Lavalink.ExistingPlayer(guildID)
 	if p == nil || p.Track == nil {
 		return fmt.Errorf("nothing is playing")
+	}
+	if err := validateTimescale(speed, pitch, rate); err != nil {
+		return err
 	}
 	name = strings.ToLower(name)
 
@@ -80,7 +85,7 @@ func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
 		fm.mu.Unlock()
 		return p.Update(context.TODO(), disgolink.WithFilters(filters))
 	case "clear":
-		return fm.SetFilter(guildID, "reset")
+		return fm.SetFilter(guildID, "reset", nil, nil, nil)
 	}
 
 	fn, ok := filterPresets[name]
@@ -89,6 +94,22 @@ func (fm *filterManager) SetFilter(guildID snowflake.ID, name string) error {
 	}
 
 	preset := fn()
+	if speed != nil || pitch != nil || rate != nil {
+		ts := preset.Timescale
+		if ts == nil {
+			ts = &lavalink.Timescale{Speed: 1, Pitch: 1, Rate: 1}
+		}
+		if speed != nil {
+			ts.Speed = *speed
+		}
+		if pitch != nil {
+			ts.Pitch = *pitch
+		}
+		if rate != nil {
+			ts.Rate = *rate
+		}
+		preset.Timescale = ts
+	}
 
 	fm.mu.Lock()
 	state := fm.states[guildID]
@@ -187,4 +208,24 @@ func (fm *filterManager) ActiveFilters(guildID snowflake.ID) []string {
 var filterFields = []string{
 	"volume", "equalizer", "timescale", "tremolo", "vibrato",
 	"rotation", "karaoke", "lowpass",
+}
+
+// validateTimescale checks optional custom timescale components against the
+// ranges Lavalink accepts. Nil means "not provided".
+func validateTimescale(speed, pitch, rate *float64) error {
+	for _, c := range [...]struct {
+		name   string
+		v      *float64
+		lo, hi float64
+	}{
+		{"speed", speed, 0.5, 2.0},
+		{"pitch", pitch, 0.25, 4.0},
+		{"rate", rate, 0.25, 4.0},
+	} {
+		if c.v == nil || (c.lo <= *c.v && *c.v <= c.hi) {
+			continue
+		}
+		return fmt.Errorf("%s must be between %g and %g", c.name, c.lo, c.hi)
+	}
+	return nil
 }

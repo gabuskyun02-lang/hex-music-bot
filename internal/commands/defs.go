@@ -22,9 +22,10 @@ var commandDefs = []discord.ApplicationCommandCreate{
 		Description: "Play a song, playlist or search query",
 		Options: []discord.ApplicationCommandOption{
 			discord.ApplicationCommandOptionString{
-				Name:        "identifier",
-				Description: "Song link, playlist link or search query",
-				Required:    true,
+				Name:         "identifier",
+				Description:  "Song link, playlist link or search query",
+				Required:     true,
+				Autocomplete: true,
 			},
 			discord.ApplicationCommandOptionString{
 				Name:        "source",
@@ -280,6 +281,27 @@ var commandDefs = []discord.ApplicationCommandCreate{
 					{Name: "Low Pass", Value: "lowpass"},
 					{Name: "Reset All", Value: "reset"},
 				},
+			},
+			discord.ApplicationCommandOptionFloat{
+				Name:        "speed",
+				Description: "Custom speed multiplier (0.5-2.0)",
+				Required:    false,
+				MinValue:    omit.Ptr(0.5),
+				MaxValue:    omit.Ptr(2.0),
+			},
+			discord.ApplicationCommandOptionFloat{
+				Name:        "pitch",
+				Description: "Custom pitch multiplier (0.25-4.0)",
+				Required:    false,
+				MinValue:    omit.Ptr(0.25),
+				MaxValue:    omit.Ptr(4.0),
+			},
+			discord.ApplicationCommandOptionFloat{
+				Name:        "rate",
+				Description: "Custom rate multiplier (0.25-4.0)",
+				Required:    false,
+				MinValue:    omit.Ptr(0.25),
+				MaxValue:    omit.Ptr(4.0),
 			},
 		},
 	},

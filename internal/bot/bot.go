@@ -49,7 +49,7 @@ func New(cfg *config.Config, st *store.Store) *Bot {
 	b := &Bot{
 		Cfg:      cfg,
 		Store:    st,
-		Player:   player.NewManager(),
+		Player:   player.NewManager(cfg.QueueMax),
 		failover: NewFailoverManager(),
 		Handlers: make(map[string]CommandHandler),
 	}

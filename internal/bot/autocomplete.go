@@ -14,11 +14,13 @@ import (
 	"github.com/disgoorg/disgolink/v4/lavalink"
 )
 
-// OnAutocomplete serves live /search suggestions. Chosen values carry the
-// full track URI, so /play re-resolves exactly — no server-side cache needed.
+// OnAutocomplete serves live /search and /play suggestions. Chosen values
+// carry the full track URI, so /play re-resolves exactly — no server-side
+// cache needed.
 func (b *Bot) OnAutocomplete(event *events.AutocompleteInteractionCreate) {
 	data := event.Data
-	if !strings.HasSuffix(data.CommandPath(), "/search") {
+	path := data.CommandPath()
+	if !strings.HasSuffix(path, "/search") && !strings.HasSuffix(path, "/play") {
 		_ = event.Acknowledge()
 		return
 	}

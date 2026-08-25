@@ -94,11 +94,18 @@ func Play(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player != nil && player.Track != nil {
-		queue.EnqueueAs(event.User().ID, *toPlay)
-		queue.EnqueueAs(event.User().ID, enqueued...)
+		a1, r1 := queue.EnqueueAs(event.User().ID, *toPlay)
+		a2, r2 := queue.EnqueueAs(event.User().ID, enqueued...)
+		added, rej := a1+a2, r1+r2
+		if added == 0 {
+			return b.EditReply(event, "⚠️ Queue is full — nothing was added")
+		}
 		message := fmt.Sprintf("Added %s to the queue", ui.TrackMarkdown(*toPlay))
-		if len(enqueued) > 0 {
-			message += fmt.Sprintf(" (+%d playlist tracks)", len(enqueued))
+		if a2 > 0 {
+			message += fmt.Sprintf(" (+%d playlist tracks)", a2)
+		}
+		if rej > 0 {
+			message += fmt.Sprintf("\n⚠️ Queue full — added %d of %d, %d rejected", added, added+rej, rej)
 		}
 		return b.EditReply(event, message)
 	}

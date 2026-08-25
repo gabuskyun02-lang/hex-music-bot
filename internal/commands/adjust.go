@@ -39,12 +39,15 @@ func Seek(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, data
 	if player == nil || player.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
 	}
+	if player.Track.Info.IsStream {
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("⏩ Can't seek in a live stream"))
+	}
 
 	unit := int(lavalink.Second)
 	if v, ok := data.OptInt("unit"); ok {
 		unit = v
 	}
-	position := lavalink.Duration(data.Int("position") * unit)
+	position := lavalink.Duration(clampSeek(int64(data.Int("position"))*int64(unit), int64(player.Track.Info.Length)))
 	if err := player.Update(context.TODO(), disgolink.WithPosition(position)); err != nil {
 		return err
 	}
@@ -65,4 +68,16 @@ func Remove(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, da
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Position out of range — queue has %d track(s)", count)))
 	}
 	return b.ReplyEmbed(event, hexbot.SuccessEmbed(fmt.Sprintf("🗑 Removed #%d: %s", index, ui.TrackMarkdown(track))))
+}
+
+// clampSeek confines pos to [0, dur); a non-positive dur yields 0.
+func clampSeek(pos, dur int64) int64 {
+	switch {
+	case dur <= 0 || pos < 0:
+		return 0
+	case pos >= dur:
+		return dur - 1 // stay below length — Lavalink rejects pos == duration
+	default:
+		return pos
+	}
 }
