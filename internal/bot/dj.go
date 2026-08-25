@@ -35,17 +35,25 @@ func (b *Bot) IsDJ(event *events.ApplicationCommandInteractionCreate) bool {
 
 // VoteThreshold returns the number of votes required for the guild.
 // Returns 0 if no voting needed (user is DJ or alone in channel).
+// Returns -1 if the requester is not in the bot's current voice channel
+// (callers should treat this as a denial).
 func (b *Bot) VoteThreshold(event *events.ApplicationCommandInteractionCreate) int {
 	if b.IsDJ(event) {
 		return 0
 	}
 	vs, ok := b.Client.Caches.VoiceState(*event.GuildID(), event.User().ID)
 	if !ok || vs.ChannelID == nil {
-		return 0
+		return -1
 	}
 	listeners := len(b.voice.ListenerIDs(*event.GuildID()))
 	if listeners <= 1 {
 		return 0
 	}
-	return listeners
+	return voteThreshold(listeners)
+}
+
+// voteThreshold returns the majority vote count for a given listener count.
+// listeners <= 1 is handled by the caller (returns 0 = instant action).
+func voteThreshold(listeners int) int {
+	return listeners/2 + 1
 }

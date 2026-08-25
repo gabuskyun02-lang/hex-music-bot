@@ -28,6 +28,8 @@ type Config struct {
 	LeaveTimeout time.Duration // idle auto-disconnect; 0 = disabled
 	MetricsAddr  string        // Prometheus /metrics; empty = disabled
 
+	CardDJGated bool // gate destructive card buttons behind DJ role; default off
+
 	BotOwnerID snowflake.ID // /debug access control; zero = disabled
 }
 
@@ -49,6 +51,7 @@ func Load() (*Config, error) {
 		DBPath:      envOr("DB_PATH", "./data/hex-music-bot.db"),
 		AutoPause:   envBool("AUTO_PAUSE", true),
 		MetricsAddr: os.Getenv("METRICS_ADDR"),
+		CardDJGated: envBool("CARD_DJ_GATED", false),
 	}
 	nodes, nodeErrs := parseNodes(envOr("LAVALINK_NODES", "main:youshallnotpass@localhost:2333"))
 	cfg.Nodes = nodes

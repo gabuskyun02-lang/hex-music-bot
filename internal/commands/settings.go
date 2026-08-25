@@ -93,6 +93,9 @@ func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 	userID := event.User().ID
 
 	threshold := b.VoteThreshold(event)
+	if threshold < 0 {
+		return b.ReplyEmbed(event, hexbot.ErrorEmbed("You must be in the bot's voice channel to vote"))
+	}
 	player := b.Lavalink.ExistingPlayer(guildID)
 	if player == nil || player.Track == nil {
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Nothing is playing"))
@@ -103,7 +106,7 @@ func VoteSkip(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, 
 		b.Cards.Refresh(guildID)
 	})
 
-	if threshold <= 0 {
+	if threshold == 0 {
 		return b.Reply(event, "⏭ Skipped") // DJ executed immediately
 	}
 	if alreadyVoted {

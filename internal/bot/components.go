@@ -1,11 +1,13 @@
 package bot
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 // OnComponentInteraction routes card buttons, lyrics pagination, and list
@@ -43,9 +45,23 @@ func (b *Bot) OnComponentInteraction(event *events.ComponentInteractionCreate) {
 		_ = event.DeferUpdateMessage()
 		return
 	}
-	_ = event.DeferUpdateMessage()
 
 	action := strings.TrimPrefix(customID, "hex:")
+
+	// When CardDJGated is enabled, destructive buttons require DJ role.
+	// Default off — keeps current guild behavior when unset.
+	if b.Cfg.CardDJGated && isDestructiveAction(action) {
+		if !b.isComponentDJ(*guildID, event.Member()) {
+			_ = event.CreateMessage(discord.MessageCreate{
+				Content: "❌ You need the DJ role to use this button",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+			return
+		}
+	}
+
+	_ = event.DeferUpdateMessage()
+
 	if _, denied := b.checkCooldown(event.User().ID, "btn:"+action); denied {
 		return // ack already sent; deny silently
 	}
@@ -73,4 +89,37 @@ func (b *Bot) OnComponentInteraction(event *events.ComponentInteractionCreate) {
 		return
 	}
 	b.Cards.Refresh(*guildID)
+}
+
+// isDestructiveAction returns true for card button actions that alter
+// playback state destructively (stop, skip, clear-like).
+func isDestructiveAction(action string) bool {
+	switch action {
+	case "stop", "skip", "prev":
+		return true
+	}
+	return false
+}
+
+// isComponentDJ checks DJ privileges for a component interaction member.
+// Same logic as IsDJ but operates on raw guild ID + member, avoiding the
+// ApplicationCommandInteractionCreate dependency.
+func (b *Bot) isComponentDJ(guildID snowflake.ID, member *discord.ResolvedMember) bool {
+	settings, err := b.Store.GetGuildSettings(context.Background(), guildID.String())
+	if err != nil || settings.DJRoleID == "" {
+		return true // no DJ role configured
+	}
+	djRoleID, err := snowflake.Parse(settings.DJRoleID)
+	if err != nil {
+		return true
+	}
+	if member == nil {
+		return false
+	}
+	for _, roleID := range member.RoleIDs {
+		if roleID == djRoleID {
+			return true
+		}
+	}
+	return false
 }
