@@ -412,6 +412,15 @@ func (s *Store) AddPlaylistTrack(ctx context.Context, playlistID int64, t Playli
 	return err
 }
 
+func (s *Store) UpdatePlaylistTrack(ctx context.Context, playlistID int64, oldTitle string, t PlaylistTrack) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE playlist_tracks
+		 SET identifier = ?, title = ?, author = ?, length_ms = ?, uri = ?
+		 WHERE playlist_id = ? AND title = ? AND (identifier = '' OR uri = '')`,
+		t.Identifier, t.Title, t.Author, t.LengthMS, t.URI, playlistID, oldTitle)
+	return err
+}
+
 // AllSnapshots returns every saved player snapshot (for boot-time restore).
 func (s *Store) AllSnapshots(ctx context.Context) ([]*PlayerSnapshot, error) {
 	rows, err := s.db.QueryContext(ctx,

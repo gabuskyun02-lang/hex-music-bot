@@ -4,12 +4,17 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/events"
+	"github.com/disgoorg/disgolink/v4/disgolink"
+	"github.com/disgoorg/disgolink/v4/lavalink"
 
 	hexbot "hex-music-bot/internal/bot"
 	"hex-music-bot/internal/store"
+	"hex-music-bot/internal/ui"
 )
 
 // History shows recently played tracks for the guild or a specific user.
@@ -242,12 +247,216 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		if pl.OwnerID != userID.String() {
 			return b.ReplyEmbed(event, hexbot.ErrorEmbed("You can only add tracks to your own playlists"))
 		}
-		if err := b.Store.AddPlaylistTrack(ctx, pl.ID, store.PlaylistTrack{Title: title}); err != nil {
+		identifier := title
+		if !urlPattern.MatchString(identifier) && !searchPattern.MatchString(identifier) {
+			identifier = lavalink.SearchTypeYouTube.Apply(identifier)
+		}
+		resolved, _, err := resolveTrack(b, identifier)
+		if err != nil || resolved == nil {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Nothing found for `%s`", title)))
+		}
+		uri := ""
+		if resolved.Info.URI != nil {
+			uri = *resolved.Info.URI
+		}
+		trackRecord := store.PlaylistTrack{
+			Identifier: resolved.Info.Identifier,
+			Title:      resolved.Info.Title,
+			Author:     resolved.Info.Author,
+			LengthMS:   int64(resolved.Info.Length),
+			URI:        uri,
+		}
+		if err := b.Store.AddPlaylistTrack(ctx, pl.ID, trackRecord); err != nil {
 			return err
 		}
-		return b.Reply(event, fmt.Sprintf("Added **%s** to **%s**", title, pl.Name))
+		return b.Reply(event, fmt.Sprintf("Added **%s** to **%s**", resolved.Info.Title, pl.Name))
+
+	case "play":
+		code := data.String("code")
+		guildID := *event.GuildID()
+		vs, ok := b.Client.Caches.VoiceState(guildID, event.User().ID)
+		if !ok {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("You need to be in a voice channel first"))
+		}
+		pl, err := b.Store.GetPlaylistByCode(ctx, code)
+		if err != nil {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Playlist not found for code `%s`", code)))
+		}
+		if len(pl.Tracks) == 0 {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed(fmt.Sprintf("Playlist **%s** is empty", pl.Name)))
+		}
+		if err := event.DeferCreateMessage(false); err != nil {
+			return err
+		}
+		return playlistPlay(b, event, vs, pl)
+
+	case "savequeue":
+		guildID := *event.GuildID()
+		name := strings.TrimSpace(data.String("name"))
+		if name == "" {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Playlist name cannot be empty"))
+		}
+		queue := b.Player.Get(guildID)
+		snap := queue.Snapshot()
+		p := b.Lavalink.ExistingPlayer(guildID)
+		var allTracks []lavalink.Track
+		if p != nil && p.Track != nil {
+			allTracks = append(allTracks, *p.Track)
+		}
+		allTracks = append(allTracks, snap...)
+		if len(allTracks) == 0 {
+			return b.ReplyEmbed(event, hexbot.ErrorEmbed("Queue is empty — nothing to save"))
+		}
+		pl, err := b.Store.CreatePlaylist(ctx, userID.String(), name)
+		if err != nil {
+			return err
+		}
+		for _, t := range allTracks {
+			uri := ""
+			if t.Info.URI != nil {
+				uri = *t.Info.URI
+			}
+			_ = b.Store.AddPlaylistTrack(ctx, pl.ID, store.PlaylistTrack{
+				Identifier: t.Info.Identifier,
+				Title:      t.Info.Title,
+				Author:     t.Info.Author,
+				LengthMS:   int64(t.Info.Length),
+				URI:        uri,
+			})
+		}
+		return b.Reply(event, fmt.Sprintf("Saved %d track(s) to playlist **%s** (share code: `%s`)", len(allTracks), pl.Name, pl.ShareCode))
 
 	default:
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Unknown playlist subcommand"))
 	}
+}
+
+// playlistPlay enqueues playlist tracks with legacy backfill and starts playback if idle.
+func playlistPlay(b *hexbot.Bot, event *events.ApplicationCommandInteractionCreate, vs discord.VoiceState, pl *store.Playlist) error {
+	guildID := *event.GuildID()
+	node := b.BestHealthyNode()
+	if node == nil {
+		return b.EditReply(event, "Lavalink node not connected — try again in a moment")
+	}
+
+	tracks := make([]lavalink.Track, len(pl.Tracks))
+	var unresTitles []string
+	var mu sync.Mutex
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4)
+	for i, pt := range pl.Tracks {
+		wg.Add(1)
+		go func(i int, pt store.PlaylistTrack) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			query := pt.Identifier
+			isLegacy := pt.Identifier == "" || pt.URI == ""
+			if isLegacy {
+				query = pt.Title
+				if !urlPattern.MatchString(query) && !searchPattern.MatchString(query) {
+					query = lavalink.SearchTypeYouTube.Apply(query)
+				}
+			}
+			t, _, err := resolveTrack(b, query)
+			if err == nil && t != nil {
+				tracks[i] = *t
+				if isLegacy {
+					uri := ""
+					if t.Info.URI != nil {
+						uri = *t.Info.URI
+					}
+					_ = b.Store.UpdatePlaylistTrack(context.Background(), pl.ID, pt.Title, store.PlaylistTrack{
+						Identifier: t.Info.Identifier,
+						Title:      t.Info.Title,
+						Author:     t.Info.Author,
+						LengthMS:   int64(t.Info.Length),
+						URI:        uri,
+					})
+				}
+			} else {
+				mu.Lock()
+				unresTitles = append(unresTitles, pt.Title)
+				mu.Unlock()
+			}
+		}(i, pt)
+	}
+	wg.Wait()
+
+	var resolvedTracks []lavalink.Track
+	for _, t := range tracks {
+		if t.Info.Title != "" || t.Info.Identifier != "" {
+			resolvedTracks = append(resolvedTracks, t)
+		}
+	}
+
+	if len(resolvedTracks) == 0 {
+		return b.EditReply(event, fmt.Sprintf("❌ Could not resolve any tracks in playlist **%s**", pl.Name))
+	}
+
+	queue := b.Player.Get(guildID)
+	settings, _ := b.Store.GetGuildSettings(context.Background(), guildID.String())
+
+	var toEnqueue []lavalink.Track
+	if settings != nil && !settings.AllowDuplicate {
+		for _, t := range resolvedTracks {
+			if !queue.HasDuplicate(t.Info.Title) {
+				if p := b.Lavalink.ExistingPlayer(guildID); p != nil && p.Track != nil && strings.EqualFold(p.Track.Info.Title, t.Info.Title) {
+					continue
+				}
+				toEnqueue = append(toEnqueue, t)
+			}
+		}
+		if len(toEnqueue) == 0 {
+			return b.EditReply(event, "⛔ All playlist tracks are duplicates and blocked on this server")
+		}
+	} else {
+		toEnqueue = resolvedTracks
+	}
+
+	p := b.Lavalink.ExistingPlayer(guildID)
+	if p != nil && p.Track != nil {
+		added, rej := queue.EnqueueAs(event.User().ID, toEnqueue...)
+		if added == 0 {
+			return b.EditReply(event, "⚠️ Queue is full — nothing was added")
+		}
+		msg := fmt.Sprintf("Added **%d** track(s) from playlist **%s** to the queue", added, pl.Name)
+		if rej > 0 {
+			msg += fmt.Sprintf(" (%d rejected: queue full)", rej)
+		}
+		if len(unresTitles) > 0 {
+			msg += fmt.Sprintf(" · %d track(s) failed to resolve", len(unresTitles))
+		}
+		return b.EditReply(event, msg)
+	}
+
+	first := toEnqueue[0]
+	rest := toEnqueue[1:]
+	added, rej := queue.EnqueueAs(event.User().ID, rest...)
+
+	_ = b.Client.UpdateVoiceState(context.TODO(), guildID, vs.ChannelID, false, false)
+	updateOpts := []disgolink.PlayerUpdateOpt{disgolink.WithTrack(first)}
+	if settings != nil && settings.DefaultVolume > 0 && settings.DefaultVolume != 100 {
+		updateOpts = append(updateOpts, disgolink.WithVolume(settings.DefaultVolume))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := b.Lavalink.Player(guildID).Update(ctx, updateOpts...); err != nil {
+		return err
+	}
+	b.Cards.Create(guildID, event.Channel().ID())
+
+	msg := fmt.Sprintf("Playing %s from playlist **%s**", ui.TrackMarkdown(first), pl.Name)
+	if added > 0 {
+		msg += fmt.Sprintf(" (+%d track(s) queued)", added)
+	}
+	if rej > 0 {
+		msg += fmt.Sprintf(" (%d rejected: queue full)", rej)
+	}
+	if len(unresTitles) > 0 {
+		msg += fmt.Sprintf(" · %d track(s) failed to resolve", len(unresTitles))
+	}
+	return b.EditReply(event, msg)
 }

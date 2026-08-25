@@ -231,16 +231,18 @@ var commandDefs = []discord.ApplicationCommandCreate{
 					{Name: "Show playlist", Value: "show"},
 					{Name: "Delete playlist", Value: "delete"},
 					{Name: "Add track by title", Value: "add"},
+					{Name: "Play playlist", Value: "play"},
+					{Name: "Save queue to playlist", Value: "savequeue"},
 				},
 			},
 			discord.ApplicationCommandOptionString{
 				Name:        "name",
-				Description: "Playlist name (for create)",
+				Description: "Playlist name (for create/savequeue)",
 				Required:    false,
 			},
 			discord.ApplicationCommandOptionString{
 				Name:        "code",
-				Description: "Share code (for show/delete/add)",
+				Description: "Share code (for show/delete/add/play)",
 				Required:    false,
 			},
 			discord.ApplicationCommandOptionString{
