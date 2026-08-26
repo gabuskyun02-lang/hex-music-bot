@@ -311,20 +311,29 @@ func PlaylistGroup(b *hexbot.Bot, event *events.ApplicationCommandInteractionCre
 		if err != nil {
 			return err
 		}
+		saved, failed := 0, 0
 		for _, t := range allTracks {
 			uri := ""
 			if t.Info.URI != nil {
 				uri = *t.Info.URI
 			}
-			_ = b.Store.AddPlaylistTrack(ctx, pl.ID, store.PlaylistTrack{
+			if err := b.Store.AddPlaylistTrack(ctx, pl.ID, store.PlaylistTrack{
 				Identifier: t.Info.Identifier,
 				Title:      t.Info.Title,
 				Author:     t.Info.Author,
 				LengthMS:   int64(t.Info.Length),
 				URI:        uri,
-			})
+			}); err != nil {
+				failed++
+				continue
+			}
+			saved++
 		}
-		return b.Reply(event, fmt.Sprintf("Saved %d track(s) to playlist **%s** (share code: `%s`)", len(allTracks), pl.Name, pl.ShareCode))
+		msg := fmt.Sprintf("Saved %d of %d track(s) to playlist **%s** (share code: `%s`)", saved, len(allTracks), pl.Name, pl.ShareCode)
+		if failed > 0 {
+			msg += fmt.Sprintf("\n⚠️ %d track(s) failed to save", failed)
+		}
+		return b.Reply(event, msg)
 
 	default:
 		return b.ReplyEmbed(event, hexbot.ErrorEmbed("Unknown playlist subcommand"))

@@ -42,18 +42,25 @@ func (b *Bot) VoteThreshold(event *events.ApplicationCommandInteractionCreate) i
 		return 0
 	}
 	vs, ok := b.Client.Caches.VoiceState(*event.GuildID(), event.User().ID)
-	if !ok || vs.ChannelID == nil {
+	botCh, botConnected := b.voice.ChannelFor(*event.GuildID())
+	inBotChannel := ok && vs.ChannelID != nil && botConnected && *vs.ChannelID == botCh
+	return voteThresholdFor(inBotChannel, len(b.voice.ListenerIDs(*event.GuildID())))
+}
+
+// voteThreshold returns the majority vote count for a given listener count.
+func voteThreshold(listeners int) int {
+	return listeners/2 + 1
+}
+
+// voteThresholdFor classifies a voter's access: -1 when they are not in the
+// bot's voice channel, 0 when no vote is needed (alone), otherwise the
+// majority threshold for the current listener count.
+func voteThresholdFor(inBotChannel bool, listeners int) int {
+	if !inBotChannel {
 		return -1
 	}
-	listeners := len(b.voice.ListenerIDs(*event.GuildID()))
 	if listeners <= 1 {
 		return 0
 	}
 	return voteThreshold(listeners)
-}
-
-// voteThreshold returns the majority vote count for a given listener count.
-// listeners <= 1 is handled by the caller (returns 0 = instant action).
-func voteThreshold(listeners int) int {
-	return listeners/2 + 1
 }

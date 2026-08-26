@@ -19,8 +19,10 @@ import (
 // cache needed.
 func (b *Bot) OnAutocomplete(event *events.AutocompleteInteractionCreate) {
 	data := event.Data
+	// Exact match: a HasSuffix("/play") would also catch "/playlist play",
+	// firing track searches for its share-code option.
 	path := data.CommandPath()
-	if !strings.HasSuffix(path, "/search") && !strings.HasSuffix(path, "/play") {
+	if path != "/search" && path != "/play" {
 		_ = event.Acknowledge()
 		return
 	}
